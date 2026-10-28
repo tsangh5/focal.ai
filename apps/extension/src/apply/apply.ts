@@ -119,6 +119,9 @@ function textColumnByStyle(card: HTMLElement): HTMLElement {
 const LABEL_STYLE: Record<string, string> = {
   "top-pick": `background:linear-gradient(135deg,#8b74ff,${VIOLET});color:#fff;border:1px solid rgba(255,255,255,.12)`,
   "good-match": "background:#18181b;color:#fafafa;border:1px solid #3f3f46",
+  // Something the user already saved: outlined rather than filled, so a known
+  // favourite does not shout louder than a genuine new match.
+  favourite: `background:#18181b;color:#c4b8ff;border:1px solid ${VIOLET}`,
 };
 
 const FEEDBACK_STYLE =
@@ -173,7 +176,7 @@ function labelElement(
   compact = false,
   onFeedback?: (verdict: Verdict) => Promise<boolean>,
 ): HTMLElement {
-  const kind = badge === "top-pick" ? "top-pick" : "good-match";
+  const kind = badge && badge in LABEL_STYLE ? badge : "good-match";
   const host = make(doc, "focal-label", "label");
   host.setAttribute("data-badge", badge ?? "good-match");
   const root = host.attachShadow({ mode: "open" });

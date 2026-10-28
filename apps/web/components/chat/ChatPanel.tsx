@@ -88,7 +88,7 @@ export function ChatPanel({ email }: { email: string }) {
   return (
     <section className="flex min-h-[70vh] flex-col gap-4" aria-label={`Chat with ${AGENT_NAME}`}>
       <div className="flex items-start gap-3">
-        <IrisAvatar size={36} className="mt-0.5 shrink-0" />
+        <IrisAvatar size={44} className="-mt-1 shrink-0" state={busy ? "thinking" : "idle"} />
         <div className="flex flex-col gap-1">
           <h1 className="text-2xl font-semibold tracking-tight text-ink">Tell {AGENT_NAME} what you like</h1>
           <p className="text-sm text-muted">
@@ -123,7 +123,15 @@ export function ChatPanel({ email }: { email: string }) {
               className={cn("flex flex-col gap-1.5", m.role === "user" ? "items-end" : "items-start")}
             >
               <div className={cn("flex max-w-full items-end gap-2", m.role === "user" ? "flex-row-reverse" : "")}>
-                {m.role === "assistant" ? <IrisAvatar size={22} className="mb-0.5 shrink-0" /> : null}
+                {m.role === "assistant" ? (
+                  // Pleased when the turn actually saved something.
+                  <IrisAvatar
+                    size={26}
+                    className="mb-0.5 shrink-0"
+                    state={m.events && m.events.length > 0 ? "happy" : "idle"}
+                    decorative
+                  />
+                ) : null}
                 <div
                   data-role={m.role}
                   className={cn(
@@ -149,14 +157,17 @@ export function ChatPanel({ email }: { email: string }) {
         </AnimatePresence>
 
         {busy ? (
-          <div className="flex items-center gap-1 self-start rounded-2xl bg-surface-2 px-3.5 py-3" aria-label={`${AGENT_NAME} is typing`}>
-            {[0, 1, 2].map((d) => (
-              <span
-                key={d}
-                className="size-1.5 animate-bounce rounded-full bg-muted"
-                style={{ animationDelay: `${d * 120}ms` }}
-              />
-            ))}
+          <div className="flex items-end gap-2 self-start" aria-label={`${AGENT_NAME} is typing`}>
+            <IrisAvatar size={26} className="mb-0.5 shrink-0" state="thinking" decorative />
+            <div className="flex items-center gap-1 rounded-2xl bg-surface-2 px-3.5 py-3">
+              {[0, 1, 2].map((d) => (
+                <span
+                  key={d}
+                  className="size-1.5 animate-bounce rounded-full bg-muted"
+                  style={{ animationDelay: `${d * 120}ms` }}
+                />
+              ))}
+            </div>
           </div>
         ) : null}
         <div ref={endRef} />
