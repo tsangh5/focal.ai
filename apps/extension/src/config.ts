@@ -17,3 +17,21 @@ export const FOCAL_HOSTS: string[] = [
   "focal.ai",
   "focal-ai.vercel.app",
 ];
+
+/**
+ * Origins allowed to hand the extension a session on /connect. Must stay in
+ * step with `externally_connectable` in build.mjs — the manifest decides which
+ * pages may send at all, and this is the per-message check behind it.
+ *
+ * The build origin alone is not enough: a local build trusts only localhost,
+ * so the deployed site could never connect.
+ */
+export const TRUSTED_ORIGINS: string[] = [
+  FOCAL_ORIGIN,
+  "https://focal-ai.vercel.app",
+  "https://focal.ai",
+];
+
+export function isTrustedOrigin(origin: string | undefined): boolean {
+  return origin !== undefined && TRUSTED_ORIGINS.includes(origin);
+}

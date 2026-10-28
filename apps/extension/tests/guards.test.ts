@@ -3,6 +3,7 @@ import { JSDOM } from "jsdom";
 import { checkEligibility } from "../src/guards/eligibility";
 import { hasSensitiveField } from "../src/guards/fields";
 import { matchNeverRun } from "@focal-ai/core/neverRun";
+import { isTrustedOrigin } from "../src/config";
 import { DEFAULT_SETTINGS, hostMatches, normalizeHost, parseSettings, toggleSite } from "../src/settings";
 
 const doc = (html: string) => new JSDOM(`<body>${html}</body>`).window.document;
@@ -176,5 +177,25 @@ describe("settings helpers", () => {
   it("parses junk safely", () => {
     expect(parseSettings(null)).toEqual(DEFAULT_SETTINGS);
     expect(parseSettings({ skipSites: ["a.com", 3, "A.com"], incognito: "yes" })).toEqual({ skipSites: ["a.com"], siteOff: [], incognito: false });
+  });
+});
+
+describe("trusted origins for the /connect handoff", () => {
+  it("accepts the build origin and the deployed sites", () => {
+    for (const o of ["http://localhost:3000", "https://focal-ai.vercel.app", "https://focal.ai"]) {
+      expect(isTrustedOrigin(o), o).toBe(true);
+    }
+  });
+
+  it("rejects look-alikes, subdomains and missing origins", () => {
+    for (const o of [
+      "https://focal.ai.evil.com",
+      "https://evil.focal.ai",
+      "http://focal-ai.vercel.app",
+      "https://focal-ai.vercel.app.evil.com",
+      undefined,
+    ]) {
+      expect(isTrustedOrigin(o), String(o)).toBe(false);
+    }
   });
 });

@@ -1,5 +1,5 @@
 import type { BackgroundReply, ContentMessage, ExternalMessage } from "./api";
-import { FOCAL_ORIGIN } from "./config";
+import { FOCAL_ORIGIN, isTrustedOrigin } from "./config";
 import { parseSettings } from "./settings";
 import { getSession, getSettings, setSession, setSettings, setTabResult } from "./storage";
 
@@ -72,7 +72,7 @@ chrome.runtime.onMessage.addListener((msg: ContentMessage, sender, sendResponse)
 });
 
 chrome.runtime.onMessageExternal.addListener((msg: ExternalMessage, sender, sendResponse) => {
-  if (sender.origin !== FOCAL_ORIGIN) {
+  if (!isTrustedOrigin(sender.origin)) {
     sendResponse({ ok: false, error: "forbidden_origin" });
     return false;
   }

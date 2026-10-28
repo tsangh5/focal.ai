@@ -7,6 +7,8 @@ import { build } from "esbuild";
 const root = dirname(fileURLToPath(import.meta.url));
 const out = join(root, "dist");
 const origin = (process.env.FOCAL_ORIGIN ?? "http://localhost:3000").replace(/\/$/, "");
+/** Shipped sites, always trusted for the /connect handoff regardless of build origin. */
+const PUBLIC_ORIGINS = ["https://focal-ai.vercel.app/*", "https://focal.ai/*"];
 const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
 
 rmSync(out, { recursive: true, force: true });
@@ -36,7 +38,10 @@ const manifest = {
   background: { service_worker: "background.js", type: "module" },
   content_scripts: [{ matches: ["http://*/*", "https://*/*"], js: ["content.js"], run_at: "document_idle" }],
   action: { default_title: "focal", default_popup: "popup/popup.html" },
-  externally_connectable: { matches: [`${origin}/*`] },
+  // The build origin plus the deployed sites. A local build would otherwise
+  // trust only localhost, so /connect on the real site could never hand the
+  // extension a session. background.ts still checks sender.origin per message.
+  externally_connectable: { matches: [...new Set([`${origin}/*`, ...PUBLIC_ORIGINS])] },
   incognito: "spanning",
 };
 writeFileSync(join(out, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
