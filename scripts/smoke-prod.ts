@@ -229,10 +229,12 @@ async function checkSecretHygiene(): Promise<void> {
   const name = "secret hygiene";
   const markers = ["X-Api-Key", "hackathon.api.qloo.com"];
   try {
-    // The Studio playground is the client-heaviest page, so scan its bundles.
-    const { status, raw } = await request("/try");
+    // The landing page is public and pulls in the shared client bundles, so
+    // scanning it covers the chunks every other page loads. (It replaced the
+    // Studio playground at /try, which was removed.)
+    const { status, raw } = await request("/");
     if (status !== 200) {
-      fail(name, `GET /try — HTTP ${status}`);
+      fail(name, `GET / — HTTP ${status}`);
       return;
     }
 
