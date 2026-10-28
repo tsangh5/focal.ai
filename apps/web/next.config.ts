@@ -37,6 +37,11 @@ const nextConfig: NextConfig = {
   images: {
     remotePatterns: [{ protocol: "https", hostname: "images.qloo.com", pathname: "/i/**" }],
   },
+  experimental: {
+    // A stale on-disk Turbopack dev cache keeps "restarting" the client entry,
+    // which reloads open pages over and over. Recompile on each start instead.
+    turbopackFileSystemCacheForDev: false,
+  },
   turbopack: {
     rules: {
       "*.css": {
