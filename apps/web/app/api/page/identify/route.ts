@@ -1,6 +1,7 @@
 import { errorResponse } from "@/lib/server/errors";
 import { JevError } from "@/lib/server/jev/client";
 import { getIdentifier, IdentifyUnavailableError, selectIdentified } from "@/lib/server/page/identify";
+import { deriveLayout } from "@/lib/server/page/layout";
 import { identifyBodySchema } from "@/lib/server/page/schemas";
 import { resolveSession, unauthorizedResponse } from "@/lib/server/page/session";
 import { checkRateLimit } from "@/lib/server/rateLimit";
@@ -28,7 +29,9 @@ export async function POST(req: Request): Promise<Response> {
   if (!parsed.success) return errorResponse(parsed.error);
   try {
     const answer = await getIdentifier().identify(parsed.data);
-    return Response.json(selectIdentified(answer));
+    // The extension keeps the layout and names cards locally next time; it is never stored here.
+    const layout = deriveLayout(parsed.data, answer);
+    return Response.json({ ...selectIdentified(answer), ...(layout ? { layout } : {}) });
   } catch (e) {
     if (e instanceof IdentifyUnavailableError) {
       return Response.json({ error: { code: "UNAVAILABLE", message: e.message } }, { status: 503 });

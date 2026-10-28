@@ -74,6 +74,12 @@ describe("POST /api/page/identify", () => {
     expect(body.items).toHaveLength(6);
   });
 
+  it("returns the learned layout: positions and type, never card text", async () => {
+    const body = await (await identifyPOST(req("/api/page/identify", identifyBody("yelp.com")))).json();
+    expect(body.layout).toEqual({ fingerprint: "DIV.card", namePosition: { snippetIndex: 0 }, type: "place", citySource: { hintIndex: 0 } });
+    expect(JSON.stringify(body.layout)).not.toMatch(/Rintaro|Restaurant|San Francisco/);
+  });
+
   it("returns nothing for unknown sites (zero confidence)", async () => {
     const body = await (await identifyPOST(req("/api/page/identify", identifyBody("example.com")))).json();
     expect(body).toEqual({ isList: false, pageType: null, items: [] });
@@ -94,6 +100,8 @@ describe("POST /api/page/identify", () => {
     const body = await (await identifyPOST(req("/api/page/identify", identifyBody("example.com")))).json();
     expect(body.pageType).toBe("book");
     expect(body.items.map((i: { clientId: string }) => i.clientId)).toEqual(["c0", "c1", "c3"]);
+    // Mixed types can't be replayed as one layout.
+    expect(body.layout).toBeUndefined();
   });
 
   it("validates the body: snippets are capped at 80 characters", async () => {

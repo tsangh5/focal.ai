@@ -26,10 +26,25 @@ export interface IdentifiedItem {
   city?: string;
 }
 
+/**
+ * Where the names sit in one list structure, learned on an identify call and
+ * kept only in this browser (§5.3). Structure only, never page text. Mirrors
+ * apps/web/lib/server/page/layout.ts.
+ */
+export interface LearnedLayout {
+  /** Structure signature of the list it was learned on. */
+  fingerprint: string;
+  namePosition: { snippetIndex: number };
+  type: InsightType;
+  citySource: { hintIndex: number } | null;
+}
+
 export interface IdentifyResponse {
   isList: boolean;
   pageType: InsightType | null;
   items: IdentifiedItem[];
+  /** Only when the cards agreed enough to be named locally next time. */
+  layout?: LearnedLayout;
 }
 
 /** Known layouts send only names, type and city (§6). */
@@ -44,6 +59,10 @@ export interface RankResponse {
   pageResultId: string | null;
   status: "ranked" | "no_signals" | "nothing_scored";
   plan: RenderPlan | null;
+  /** Items matched to a Qloo entity. Older servers leave it out. */
+  resolvedCount?: number;
+  /** The lookup budget left some items unresolved. */
+  resolutionLimited?: boolean;
 }
 
 export type Verdict = "more" | "less";
