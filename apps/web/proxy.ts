@@ -13,6 +13,10 @@ export const config = {
   matcher: [
     "/connect",
     "/chat",
+    "/profile",
+    "/activity",
+    "/settings",
+    "/onboarding",
     "/why/:path*",
     "/sign-in",
     "/sign-out",
@@ -20,5 +24,9 @@ export const config = {
     "/api/extension/:path*",
     "/api/chat",
     "/api/me",
+    "/api/profile/:path*",
+    "/api/activity/:path*",
+    "/api/settings",
+    "/api/account",
   ],
 };
