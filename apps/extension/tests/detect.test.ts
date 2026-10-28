@@ -35,6 +35,29 @@ describe("detectList", () => {
     const html = `<div hidden>${BOOK_LIST}</div>`;
     expect(detectList(page(html))).toBeNull();
   });
+
+  it("ignores groups hidden by inline style", () => {
+    const html = `<div style="display:none">${BOOK_LIST}</div>`;
+    expect(detectList(page(html))).toBeNull();
+  });
+
+  /**
+   * Live finding (2026-10-28): everlane.com ships `aria-hidden="true"` on
+   * `<main role="main">`, so believing it skipped the whole page and focal
+   * found no list at all. It is an accessibility hint, not a visibility
+   * property — sites leave it behind after a modal closes.
+   */
+  it("still finds a list under a stale aria-hidden wrapper", () => {
+    const html = `<main role="main" aria-hidden="true">${BOOK_LIST}</main>`;
+    const list = detectList(page(html));
+    expect(list).not.toBeNull();
+    expect(list!.cards.size).toBe(5);
+  });
+
+  it("still believes aria-hidden when the element really is not rendered", () => {
+    const html = `<div aria-hidden="true" style="display:none">${BOOK_LIST}</div>`;
+    expect(detectList(page(html))).toBeNull();
+  });
 });
 
 describe("extraction", () => {

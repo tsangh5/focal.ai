@@ -22,10 +22,29 @@ const SKIP_TAGS = new Set([
 const CHROME_TAGS = new Set(["NAV", "HEADER", "FOOTER", "ASIDE", "FORM", "MENU"]);
 const CHROME_ROLES = /^(navigation|menu|menubar|tablist|banner|contentinfo|toolbar|dialog|alertdialog|complementary)$/;
 
+/** Really rendered, by layout rather than by markup. Mirrors guards/fields.ts. */
+function rendered(el: Element): boolean {
+  const node = el as HTMLElement;
+  if (typeof node.checkVisibility === "function") return node.checkVisibility({ visibilityProperty: true });
+  const view = el.ownerDocument?.defaultView;
+  const style = view?.getComputedStyle(node);
+  return !style || (style.display !== "none" && style.visibility !== "hidden");
+}
+
 function isHidden(el: Element): boolean {
-  if (el.hasAttribute("hidden") || el.getAttribute("aria-hidden") === "true") return true;
+  if (el.hasAttribute("hidden")) return true;
   const style = (el as HTMLElement).style;
-  return style?.display === "none" || style?.visibility === "hidden";
+  if (style?.display === "none" || style?.visibility === "hidden") return true;
+  /**
+   * `aria-hidden` is an accessibility hint, not a visibility property, and real
+   * sites leave it behind: Everlane ships `aria-hidden="true"` on
+   * `<main role="main">`, so trusting it skipped the entire page and focal
+   * found no list at all. It is only believed when the element really is not
+   * rendered. The check is the expensive one, but `aria-hidden` is rare, so
+   * the walk still costs nothing on the overwhelming majority of elements.
+   */
+  if (el.getAttribute("aria-hidden") === "true") return !rendered(el);
+  return false;
 }
 
 function inChrome(el: Element): boolean {
