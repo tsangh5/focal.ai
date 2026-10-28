@@ -623,8 +623,13 @@ function buildJevRequest(page: SamplePage, model: string): Record<string, unknow
     const nameCriteria: Record<string, string> = { ...snippets, none: "None of these snippets names a real-world thing" };
     questions[`c${index}_name`] = {
       type: "choice",
-      instructions: `Which snippet of card c${index} is the name of the thing the card is about? If the card names a brand, choose the brand. Otherwise, for a product card, choose the product name — never the price or the colour count.`,
+      instructions: `Which snippet of card c${index} is the name of the thing the card is about? For a product card, choose the product name — never the price or the colour count.`,
       criteria: nameCriteria,
+    };
+    questions[`c${index}_brand`] = {
+      type: "choice",
+      instructions: `Which snippet of card c${index} names the brand or company that makes the item? Choose none if no snippet names one.`,
+      criteria: { ...snippets, none: "No snippet names the brand or company that makes the item" },
     };
     questions[`c${index}_type`] = {
       type: "choice",
@@ -730,8 +735,21 @@ async function runJev(): Promise<boolean> {
     );
 
     page.cards.forEach((card, index) => {
-      const name = asRecord(answers[`c${index}_name`]) as JevChoice | undefined;
-      const type = asRecord(answers[`c${index}_type`]) as JevChoice | undefined;
+      const rawName = asRecord(answers[`c${index}_name`]) as JevChoice | undefined;
+      const rawType = asRecord(answers[`c${index}_type`]) as JevChoice | undefined;
+      const brand = asRecord(answers[`c${index}_brand`]) as JevChoice | undefined;
+
+      // Mirrors the override in parseJevAnswers: a product card that names its
+      // maker is graded as the brand card it will be treated as. Grading the
+      // raw answers would report a multi-brand grid as wrong when the shipped
+      // pipeline gets it right.
+      const brandIsSnippet = typeof brand?.choice === "string" && /^s\d+$/.test(brand.choice);
+      const overridden = rawType?.choice === "product" && brandIsSnippet;
+      const name = overridden ? brand : rawName;
+      const type: JevChoice | undefined = overridden
+        ? { choice: "brand", confidence: Math.min(brand?.confidence ?? 0, rawType?.confidence ?? 0) }
+        : rawType;
+
       const expectedName = card.name === "none" ? "none" : `s${card.name}`;
       const checks: [string, JevChoice | undefined, string][] = [
         ["name", name, expectedName],
@@ -749,7 +767,7 @@ async function runJev(): Promise<boolean> {
         graded.push({ field, correct, confidence });
         parts.push(`${field} ${correct ? "✓" : `✗ (got ${answer?.choice ?? "?"}, want ${expected})`} ${round(confidence, 2)}`);
       }
-      log(`  - c${index} ${card.snippets.join(" | ")} → ${parts.join("; ")}`);
+      log(`  - c${index} ${card.snippets.join(" | ")} → ${parts.join("; ")}${overridden ? " [brand override]" : ""}`);
     });
 
     // Second call, product pages only: the facets are read from the product

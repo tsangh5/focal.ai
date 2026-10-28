@@ -3,6 +3,7 @@ import {
   buildDescribeRequest,
   createJevDescriber,
   parseDescribeAnswers,
+  parseJevAnswers,
 } from "@/lib/server/jev/client";
 import { __setDbForTests } from "@/lib/server/db";
 import { __setDescriberForTests, __setIdentifierForTests } from "@/lib/server/page/identify";
@@ -167,5 +168,49 @@ describe("buildWhyView on a product result", () => {
     // The sum of the facets is exactly the item's score.
     const sum = scored!.facets.reduce((s, f) => s + f.affinity, 0);
     expect(scored!.affinity).toBeCloseTo(sum, 5);
+  });
+});
+
+describe("brand override in parseJevAnswers", () => {
+  const body = {
+    host: "www.ssense.com",
+    pathPattern: "/home",
+    signature: "DIV.tile",
+    cityHints: [],
+    cards: [
+      { clientId: "c0", snippets: ["Aesop", "Resurrection Aromatique Hand Wash", "$41"], links: [] },
+      { clientId: "c1", snippets: ["Dry-EX Short Sleeve Polo Shirt", "$39.90"], links: [] },
+    ],
+  };
+
+  it("turns a product card that names its maker into a brand card", () => {
+    // Shape taken from a live probe run: Jev answers `product` and picks the
+    // product name even when the brand is right there, so the server decides.
+    const answer = parseJevAnswers(body, {
+      answers: {
+        is_list: { noul: 0.97 },
+        c0_name: { choice: "s1", confidence: 0.92 },
+        c0_type: { choice: "product", confidence: 0.76 },
+        c0_brand: { choice: "s0", confidence: 1 },
+        c1_name: { choice: "s0", confidence: 1 },
+        c1_type: { choice: "product", confidence: 1 },
+        c1_brand: { choice: "none", confidence: 0.95 },
+      },
+    });
+    expect(answer.cards[0]).toMatchObject({ name: "Aesop", type: "brand", confidence: 0.76 });
+    // No brand on the card, so it stays a product and takes the facet path.
+    expect(answer.cards[1]).toMatchObject({ name: "Dry-EX Short Sleeve Polo Shirt", type: "product" });
+  });
+
+  it("leaves non-product types alone when a card happens to name a company", () => {
+    const answer = parseJevAnswers(body, {
+      answers: {
+        is_list: { noul: 0.97 },
+        c0_name: { choice: "s0", confidence: 0.9 },
+        c0_type: { choice: "place", confidence: 0.9 },
+        c0_brand: { choice: "s0", confidence: 0.9 },
+      },
+    });
+    expect(answer.cards[0]).toMatchObject({ name: "Aesop", type: "place" });
   });
 });

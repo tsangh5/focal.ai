@@ -31,13 +31,18 @@ const answers = {
 };
 
 describe("Jev request", () => {
-  it("asks per-card name / type / city choices plus is_list, without links", () => {
+  it("asks per-card name / type / brand / city choices plus is_list, without links", () => {
     const req = buildJevRequest(body, "jev-latest");
     const q = req.questions as Record<string, { type: string; criteria: Record<string, string> | null }>;
-    expect(Object.keys(q)).toEqual(["is_list", "c0_name", "c0_type", "c0_city", "c1_name", "c1_type", "c1_city", "c2_name", "c2_type", "c2_city"]);
+    expect(Object.keys(q)).toEqual([
+      "is_list",
+      ...[0, 1, 2].flatMap((i) => [`c${i}_name`, `c${i}_type`, `c${i}_brand`, `c${i}_city`]),
+    ]);
     expect(q.is_list!.type).toBe("noul");
     expect(q.c0_name!.criteria).toMatchObject({ s0: "Sponsored", s1: "Rintaro", none: expect.any(String) });
     expect(Object.keys(q.c0_type!.criteria!)).toContain("video_game");
+    expect(Object.keys(q.c0_type!.criteria!)).toContain("product");
+    expect(q.c0_brand!.criteria).toMatchObject({ s1: "Rintaro", none: expect.any(String) });
     expect(q.c0_city!.criteria).toMatchObject({ unknown: expect.any(String), h0: "San Francisco, CA", h1: "ramen" });
     expect(JSON.stringify(req)).not.toContain("resy.com");
   });
