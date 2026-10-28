@@ -1,14 +1,20 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { __setTrustCheckForTests } from "../src/apply/apply";
 import { createGate } from "../src/apply/gate";
 
 let container: HTMLElement;
 
 beforeEach(() => {
   vi.useFakeTimers();
+  // jsdom's .click() is untrusted; tests that need the real check reset this.
+  __setTrustCheckForTests(() => true);
   document.body.innerHTML = '<div id="list"><div>a</div><div>b</div></div>';
   container = document.getElementById("list")!;
 });
-afterEach(() => vi.useRealTimers());
+afterEach(() => {
+  vi.useRealTimers();
+  __setTrustCheckForTests(undefined);
+});
 
 describe("render gate", () => {
   it("hides the list, applies before reveal when the plan is in time", () => {
@@ -41,6 +47,32 @@ describe("render gate", () => {
     document.querySelector<HTMLButtonElement>('[data-focal="apply"]')!.click();
     expect(apply).toHaveBeenCalledOnce();
     expect(document.querySelector('[data-focal="chip"]')).toBeNull();
+  });
+
+  it("Apply ignores synthetic clicks and checks real ones against its chip", () => {
+    const gate = createGate(container, 300);
+    vi.advanceTimersByTime(300);
+    container.dispatchEvent(new Event("click"));
+    const apply = vi.fn();
+    expect(gate.ready(apply)).toBe("late-offered");
+    const chip = document.querySelector('[data-focal="chip"]')!;
+    const button = document.querySelector<HTMLButtonElement>('[data-focal="apply"]')!;
+
+    __setTrustCheckForTests(undefined);
+    button.click();
+    button.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1, clientX: 5, clientY: 5 }));
+    expect(apply).not.toHaveBeenCalled();
+    expect(chip.isConnected).toBe(true);
+
+    const hosts: Element[] = [];
+    __setTrustCheckForTests((_ev, host) => {
+      hosts.push(host);
+      return true;
+    });
+    button.click();
+    expect(hosts).toHaveLength(1);
+    expect(hosts[0]).toBe(chip);
+    expect(apply).toHaveBeenCalledOnce();
   });
 
   it("cancel reveals immediately and restores a prior visibility", () => {

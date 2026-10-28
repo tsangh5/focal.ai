@@ -49,6 +49,31 @@ export function mcpUnauthorized(req: Request, error?: "invalid_token"): Response
   );
 }
 
+/** 503 when the token can't be checked right now, so clients retry with it instead of discarding it. */
+export function mcpUnavailable(): Response {
+  return Response.json(
+    { error: { code: "UNAVAILABLE", message: "Sign-in is unavailable right now. Try again shortly." } },
+    { status: 503, headers: { "Retry-After": "30" } },
+  );
+}
+
+/**
+ * jose `error.code`s that mean the token itself is bad (401). Codes, not class
+ * names, because names don't survive minification. Anything else (a JWKS
+ * fetch error, ERR_JWKS_TIMEOUT, the identity provider being down) is transient.
+ */
+const TOKEN_INVALID_CODES = new Set([
+  "ERR_JWT_EXPIRED",
+  "ERR_JWT_INVALID",
+  "ERR_JWT_CLAIM_VALIDATION_FAILED",
+  "ERR_JWS_INVALID",
+  "ERR_JWS_SIGNATURE_VERIFICATION_FAILED",
+  "ERR_JWKS_NO_MATCHING_KEY",
+  "ERR_JWKS_MULTIPLE_MATCHING_KEYS",
+  "ERR_JOSE_ALG_NOT_ALLOWED",
+  "ERR_JOSE_NOT_SUPPORTED",
+]);
+
 let jwks: { issuer: string; set: ReturnType<typeof createRemoteJWKSet> } | null = null;
 function jwksFor(issuer: string) {
   if (jwks?.issuer !== issuer) jwks = { issuer, set: createRemoteJWKSet(new URL(`${issuer}/oauth2/jwks`)) };
@@ -61,17 +86,24 @@ function allowedAudiences(req: Request): string[] {
   return [mcpResourceUrl(req), process.env.WORKOS_CLIENT_ID ?? "", ...extra].filter(Boolean);
 }
 
+/**
+ * The token's claims, or null when the token is invalid. Throws when it can't
+ * be checked (JWKS unreachable, timeout, identity provider down) so the route
+ * answers 503 rather than telling the client to throw a good token away.
+ */
 export async function verifyAccessToken(req: Request, token: string): Promise<JWTPayload | null> {
   const issuer = authkitIssuer();
   if (!issuer) return null;
   try {
     const { payload } = await jwtVerify(token, jwksFor(issuer), { issuer });
     const aud = typeof payload.aud === "string" ? [payload.aud] : (payload.aud ?? []);
-    if (aud.length > 0 && !aud.some((a) => allowedAudiences(req).includes(a))) return null;
+    if (aud.length === 0 || !aud.some((a) => allowedAudiences(req).includes(a))) return null;
     return payload.sub ? payload : null;
   } catch (e) {
     if (process.env.MCP_AUTH_DEBUG) console.error(e);
-    return null;
+    const code = (e as { code?: unknown } | null)?.code;
+    if (typeof code === "string" && TOKEN_INVALID_CODES.has(code)) return null;
+    throw e;
   }
 }
 
@@ -116,7 +148,11 @@ async function userForWorkosId(db: Db, workosId: string): Promise<string | null>
   let user = await db.users.byAuthId("workos", workosId);
   if (!user && process.env.WORKOS_API_KEY) {
     const { WorkOS } = await import("@workos-inc/node");
-    const remote = await new WorkOS(process.env.WORKOS_API_KEY).userManagement.getUser(workosId).catch(() => null);
+    // Only a 404 means the user is gone; any other WorkOS failure is an outage (503), not a bad token.
+    const remote = await new WorkOS(process.env.WORKOS_API_KEY).userManagement.getUser(workosId).catch((e: unknown) => {
+      if ((e as { status?: unknown } | null)?.status === 404) return null;
+      throw e;
+    });
     if (remote?.email) user = await ensureUser(db, { id: workosId, email: remote.email });
   }
   if (user) userIds.set(workosId, user.id);
@@ -125,7 +161,8 @@ async function userForWorkosId(db: Db, workosId: string): Promise<string | null>
 
 /**
  * Resolves the MCP caller from an AuthKit access token, or from an extension
- * session token for clients that only support a static bearer header.
+ * session token for clients that only support a static bearer header. Throws
+ * when the caller can't be checked right now; the route answers 503.
  */
 export async function resolveMcpCaller(req: Request, db: Db): Promise<McpCaller | "missing" | "invalid"> {
   const token = bearer(req);

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { JSDOM } from "jsdom";
 import { checkEligibility } from "../src/guards/eligibility";
 import { hasSensitiveField } from "../src/guards/fields";
@@ -122,10 +122,56 @@ describe("sensitive fields", () => {
   it("detects payment autocomplete, names and frames", () => {
     expect(hasSensitiveField(doc('<input autocomplete="cc-number">'))).toBe(true);
     expect(hasSensitiveField(doc('<input name="cvc">'))).toBe(true);
-    expect(hasSensitiveField(doc('<iframe src="https://js.stripe.com/v3/elements"></iframe>'))).toBe(true);
+    expect(hasSensitiveField(framed('<iframe src="https://js.stripe.com/v3/elements"></iframe>'))).toBe(true);
   });
   it("ignores search boxes", () => {
     expect(hasSensitiveField(doc('<input type="search" name="q"><input name="find_loc">'))).toBe(false);
+  });
+});
+
+/** jsdom lays nothing out, so give the page's iframes a box (0×0 is how a hidden frame measures). */
+function framed(html: string, width = 300, height = 60): Document {
+  const d = doc(html);
+  for (const frame of d.querySelectorAll("iframe")) {
+    frame.getBoundingClientRect = () => ({ width, height, top: 0, left: 0, right: width, bottom: height, x: 0, y: 0, toJSON: () => ({}) }) as DOMRect;
+  }
+  return d;
+}
+
+describe("payment iframes", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("block only when the frame has a visible box", () => {
+    const frame = '<iframe src="https://js.stripe.com/v3/elements"></iframe>';
+    expect(hasSensitiveField(framed(frame))).toBe(true);
+    expect(hasSensitiveField(framed(frame, 0, 0))).toBe(false);
+    expect(hasSensitiveField(framed(frame, 300, 0))).toBe(false);
+    expect(hasSensitiveField(framed(frame, 0, 60))).toBe(false);
+    expect(hasSensitiveField(doc(frame))).toBe(false); // unstubbed jsdom frames measure 0×0
+  });
+
+  it("ignore a payment frame that has a box but is hidden", () => {
+    expect(hasSensitiveField(framed('<iframe style="visibility:hidden" src="https://js.stripe.com/v3/elements"></iframe>'))).toBe(false);
+    expect(hasSensitiveField(framed('<div hidden><iframe src="https://js.stripe.com/v3/elements"></iframe></div>'))).toBe(false);
+  });
+
+  it("resolve relative and protocol-relative srcs against the page", () => {
+    vi.stubGlobal("location", new URL("https://checkout.stripe.com/c/pay/cs_test_1"));
+    expect(hasSensitiveField(framed('<iframe src="/elements-inner-card"></iframe>'))).toBe(true);
+    expect(hasSensitiveField(framed('<iframe src="elements-inner-card?x=1"></iframe>'))).toBe(true);
+
+    vi.stubGlobal("location", new URL("https://shop.example.com/cart"));
+    expect(hasSensitiveField(framed('<iframe src="//js.stripe.com/v3/elements"></iframe>'))).toBe(true);
+    // A relative src stays on the page's own host, whatever its path says.
+    expect(hasSensitiveField(framed('<iframe src="/embed/js.stripe.com/v3"></iframe>'))).toBe(false);
+    expect(hasSensitiveField(framed('<iframe src="https://ads.example.net/frame?ref=paypal.com"></iframe>'))).toBe(false);
+  });
+
+  it("ignore srcs that don't parse", () => {
+    vi.stubGlobal("location", new URL("https://shop.example.com/cart"));
+    expect(hasSensitiveField(framed('<iframe src="https://[js.stripe.com/v3"></iframe>'))).toBe(false);
   });
 });
 

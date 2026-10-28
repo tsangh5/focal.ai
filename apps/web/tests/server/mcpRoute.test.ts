@@ -25,8 +25,16 @@ vi.mock("@/lib/server/qloo", () => ({
   dataSource: () => "mock",
 }));
 
+const workos = vi.hoisted(() => ({ getUser: vi.fn() }));
+vi.mock("@workos-inc/node", () => ({
+  WorkOS: class {
+    userManagement = { getUser: workos.getUser };
+  },
+}));
+
 const ISSUER = "https://focal-test.authkit.app";
 const RESOURCE = "http://localhost/mcp";
+const CHALLENGE = 'Bearer error="invalid_token", resource_metadata="http://localhost/.well-known/oauth-protected-resource/mcp"';
 
 function mcpRequest(token: string | null, body: unknown, headers: Record<string, string> = {}) {
   return new Request(RESOURCE, {
@@ -64,11 +72,14 @@ describe("MCP discovery and auth", () => {
     jwk = { ...(await exportJWK(pair.publicKey)), kid: "k1", alg: "RS256" };
     const realFetch = globalThis.fetch;
     vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) =>
-      String(input) === `${ISSUER}/oauth2/jwks` ? Response.json({ keys: [jwk] }) : realFetch(input, init),
+      String(input) === `${ISSUER}/oauth2/jwks` ? jwksReply() : realFetch(input, init),
     );
     __setDbForTests(fakeDb);
   });
+  let jwksReply: () => Promise<Response> = async () => Response.json({ keys: [jwk] });
   afterEach(() => {
+    jwksReply = async () => Response.json({ keys: [jwk] });
+    vi.restoreAllMocks();
     __resetMcpAuthForTests();
     __resetRateLimitForTests();
   });
@@ -105,6 +116,67 @@ describe("MCP discovery and auth", () => {
 
     const wrongIssuer = await POST(mcpRequest(await sign({ aud: RESOURCE }, "https://evil.authkit.app"), toolCall("read_profile", {})));
     expect(wrongIssuer.status).toBe(401);
+  });
+
+  it("answers 401 invalid_token to expired, garbage and badly signed tokens", async () => {
+    const now = Math.floor(Date.now() / 1000);
+    const expired = await new SignJWT({ aud: RESOURCE })
+      .setProtectedHeader({ alg: "RS256", kid: "k1" })
+      .setIssuer(ISSUER)
+      .setSubject("user_w1")
+      .setIssuedAt(now - 3600)
+      .setExpirationTime(now - 1800)
+      .sign(privateKey);
+    const otherKey = (await generateKeyPair("RS256")).privateKey;
+    const forged = await new SignJWT({ aud: RESOURCE }).setProtectedHeader({ alg: "RS256", kid: "k1" }).setIssuer(ISSUER).setSubject("user_w1").setExpirationTime("5m").sign(otherKey);
+    const unknownKey = await new SignJWT({ aud: RESOURCE }).setProtectedHeader({ alg: "RS256", kid: "k9" }).setIssuer(ISSUER).setSubject("user_w1").setExpirationTime("5m").sign(otherKey);
+    for (const token of [expired, "not-a-jwt", "e30.e30.c2ln", forged, unknownKey]) {
+      const res = await POST(mcpRequest(token, toolCall("read_profile", {})));
+      expect(res.status, token).toBe(401);
+      expect(res.headers.get("www-authenticate")).toBe(CHALLENGE);
+    }
+  });
+
+  it("rejects a token with no audience", async () => {
+    const res = await POST(mcpRequest(await sign({}), toolCall("read_profile", {})));
+    expect(res.status).toBe(401);
+    expect(res.headers.get("www-authenticate")).toBe(CHALLENGE);
+  });
+
+  it.each([
+    ["the JWKS fetch fails", async () => Promise.reject(new TypeError("fetch failed"))],
+    ["the JWKS fetch times out (ERR_JWKS_TIMEOUT)", async () => Promise.reject(new DOMException("timed out", "TimeoutError"))],
+    ["AuthKit answers 502", async () => new Response("bad gateway", { status: 502 })],
+  ])("answers 503 with Retry-After, not 401, when %s", async (_why, reply) => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    jwksReply = reply;
+    const res = await POST(mcpRequest(await sign({ aud: RESOURCE }), toolCall("read_profile", {})));
+    expect(res.status).toBe(503);
+    expect(res.headers.get("retry-after")).toBe("30");
+    expect(res.headers.get("www-authenticate")).toBeNull();
+    expect(await res.json()).toMatchObject({ error: { code: "UNAVAILABLE" } });
+    expect(logged).toHaveBeenCalled();
+  });
+
+  it("answers 503 when WorkOS is down for a new user, 401 when WorkOS says the user is gone", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const byAuthId = vi.mocked(fakeDb.users.byAuthId);
+    process.env.WORKOS_API_KEY = "sk_test";
+    try {
+      byAuthId.mockResolvedValueOnce(null);
+      workos.getUser.mockRejectedValueOnce(Object.assign(new Error("bad gateway"), { status: 502 }));
+      const down = await POST(mcpRequest(await sign({ aud: RESOURCE }), toolCall("read_profile", {})));
+      expect(down.status).toBe(503);
+      expect(down.headers.get("retry-after")).toBe("30");
+
+      byAuthId.mockResolvedValueOnce(null);
+      workos.getUser.mockRejectedValueOnce(Object.assign(new Error("not found"), { status: 404 }));
+      const gone = await POST(mcpRequest(await sign({ aud: RESOURCE }), toolCall("read_profile", {})));
+      expect(gone.status).toBe(401);
+      expect(gone.headers.get("www-authenticate")).toBe(CHALLENGE);
+    } finally {
+      delete process.env.WORKOS_API_KEY;
+    }
   });
 
   it("names the client for attribution", () => {

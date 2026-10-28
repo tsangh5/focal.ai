@@ -14,6 +14,20 @@ function rendered(el: HTMLElement): boolean {
   return true;
 }
 
+/** A payment provider's frame the user can see; hidden and zero-size frames don't count. */
+function paymentFrame(frame: HTMLIFrameElement): boolean {
+  let host: string;
+  try {
+    // Resolve against the page so relative and protocol-relative srcs work.
+    host = new URL(frame.getAttribute("src") ?? "", location.href).hostname;
+  } catch {
+    return false;
+  }
+  if (!PAYMENT_FRAME.test(host)) return false;
+  const box = frame.getBoundingClientRect();
+  return box.width > 0 && box.height > 0 && rendered(frame);
+}
+
 /** True when the page shows a password field or has a payment field (§5.1). */
 export function hasSensitiveField(root: ParentNode): boolean {
   for (const input of root.querySelectorAll<HTMLInputElement>('input[type="password" i]')) {
@@ -27,7 +41,7 @@ export function hasSensitiveField(root: ParentNode): boolean {
     if (PAYMENT_NAME.test(key)) return true;
   }
   for (const frame of root.querySelectorAll<HTMLIFrameElement>("iframe[src]")) {
-    if (PAYMENT_FRAME.test(frame.getAttribute("src") ?? "")) return true;
+    if (paymentFrame(frame)) return true;
   }
   return false;
 }
