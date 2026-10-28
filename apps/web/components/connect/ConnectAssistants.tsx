@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { Check, Copy } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -48,9 +49,9 @@ export function ConnectAssistants({ mcpUrl }: { mcpUrl: string }) {
     {
       name: "ChatGPT",
       steps: [
-        "Open Settings → Apps & Connectors → Advanced settings and turn on Developer mode.",
-        "Back in Apps & Connectors, choose Create, name it focal and paste the server URL above. Authentication: OAuth.",
-        "Sign in to focal when asked, then enable focal in a chat from the + menu.",
+        "Open chatgpt.com/plugins, select +, then Add custom MCP server.",
+        "Name it focal, paste the server URL above, choose OAuth, and select Create as a plugin.",
+        "Install it, sign in to focal when asked, then type @focal in a chat.",
       ],
     },
     {
@@ -72,7 +73,11 @@ export function ConnectAssistants({ mcpUrl }: { mcpUrl: string }) {
     <div className="flex flex-col gap-4">
       <CopyField value={mcpUrl} label="server URL" />
       <p className="text-sm text-muted-foreground">
-        Assistants can read your profile, save things and vibes, and propose rules. Every change shows in your activity as{" "}
+        Assistants can read your profile, save things and vibes, and propose rules. Every change shows in{" "}
+        <Link href="/profile" className="underline underline-offset-2">
+          your activity
+        </Link>{" "}
+        as{" "}
         <Badge variant="secondary">via Claude</Badge> or <Badge variant="secondary">via ChatGPT</Badge> and can be undone.
         Rules stay pending until you approve them, and assistants can&apos;t change your settings.
       </p>

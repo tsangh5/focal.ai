@@ -13,6 +13,7 @@ export const config = {
   matcher: [
     "/connect",
     "/chat",
+    "/profile",
     "/why/:path*",
     "/sign-in",
     "/sign-out",
@@ -20,5 +21,6 @@ export const config = {
     "/api/extension/:path*",
     "/api/chat",
     "/api/me",
+    "/api/profile",
   ],
 };

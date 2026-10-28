@@ -225,6 +225,51 @@ async function checkAgent(message: string, expectedKind: "policy" | "discovery")
   }
 }
 
+/** MCP OAuth discovery: protected-resource metadata, the 401 challenge, and the authorization server. */
+async function checkMcp(): Promise<void> {
+  const name = "mcp oauth";
+  try {
+    const meta = await request("/.well-known/oauth-protected-resource/mcp");
+    const pr = asRecord(meta.body);
+    const servers = Array.isArray(pr?.authorization_servers) ? (pr.authorization_servers as unknown[]).filter((s) => typeof s === "string" && s.length > 0) : [];
+    if (meta.status !== 200 || pr?.resource !== `${BASE_URL}/mcp`) {
+      fail(name, `protected-resource — HTTP ${meta.status}, resource=${JSON.stringify(pr?.resource)}`);
+      return;
+    }
+    if (servers.length === 0) {
+      warn(name, "no authorization_servers — OAuth is not configured on this deployment");
+      return;
+    }
+
+    const unauthenticated = await fetch(`${BASE_URL}/mcp`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }),
+      signal: AbortSignal.timeout(15000),
+    });
+    const challenge = unauthenticated.headers.get("www-authenticate") ?? "";
+    if (unauthenticated.status !== 401 || !challenge.includes("resource_metadata=")) {
+      fail(name, `POST /mcp unauthenticated — HTTP ${unauthenticated.status}, WWW-Authenticate=${JSON.stringify(challenge)}`);
+      return;
+    }
+
+    const asMeta = await fetch(`${servers[0]}/.well-known/oauth-authorization-server`, { signal: AbortSignal.timeout(15000) });
+    const asBody = asRecord(await asMeta.json().catch(() => undefined));
+    const methods = Array.isArray(asBody?.code_challenge_methods_supported) ? (asBody.code_challenge_methods_supported as unknown[]) : [];
+    const registration = typeof asBody?.registration_endpoint === "string" || asBody?.client_id_metadata_document_supported === true;
+    if (asMeta.status !== 200 || !methods.includes("S256") || !registration) {
+      fail(
+        name,
+        `authorization-server — HTTP ${asMeta.status}, S256=${methods.includes("S256")}, registration_endpoint=${typeof asBody?.registration_endpoint === "string"}, client_id_metadata_document_supported=${JSON.stringify(asBody?.client_id_metadata_document_supported)}`,
+      );
+      return;
+    }
+    pass(name, `resource=${JSON.stringify(pr.resource)}, 401 challenge advertises metadata, AS=${servers[0]} supports S256 + registration`);
+  } catch (error) {
+    fail(name, errorMessage(error));
+  }
+}
+
 async function checkSecretHygiene(): Promise<void> {
   const name = "secret hygiene";
   const markers = ["X-Api-Key", "hackathon.api.qloo.com"];
@@ -286,6 +331,7 @@ await checkSearch();
 await checkRank();
 await checkAgent("hide sponsored", "policy");
 await checkAgent("find me something similar", "discovery");
+await checkMcp();
 await checkSecretHygiene();
 
 console.log("");

@@ -119,10 +119,10 @@ is equivalent:
 `score_candidates` and `create_render_plan` call the same `runRankPipeline` as the
 web Studio (`packages/core/src/pipeline.ts`), so results match the app.
 
-## Limitations
+## Limitations (local stdio server)
 
-- Local stdio server only. There is no remote/hosted endpoint and no OAuth; do not
-  expose it on a network.
+- stdio only: do not expose it on a network. The hosted endpoint (above) is the
+  one with OAuth and write tools.
 - Read-only: no profile writes, no `saveProfile`, nothing is persisted anywhere.
 - The Qloo key stays in the server process; it is never echoed into tool output or
   error messages.

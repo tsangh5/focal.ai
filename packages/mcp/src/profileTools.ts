@@ -23,6 +23,8 @@ export interface ProfileToolContext {
   qloo: QlooClient;
   /** Who the writes are attributed to: `chat` or `mcp:<client>`. */
   actor: EntrySource;
+  /** Public URL of the user's profile page, linked from successful write results. */
+  profileUrl?: string;
   getProfile(): ProfileV2;
   /** Persists one write; throws on conflict. */
   commit(next: ProfileV2, event: ActivityEvent): Promise<void>;
@@ -43,6 +45,8 @@ const isType = (t: string | undefined): t is ShortType => !!t && TYPES.includes(
 const isStrength = (s: string | undefined): s is (typeof STRENGTHS)[number] => !!s && STRENGTHS.includes(s as (typeof STRENGTHS)[number]);
 type Args = Record<string, unknown>;
 const str = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : undefined);
+const withProfilePage = <T extends Record<string, unknown>>(ctx: ProfileToolContext, value: T) =>
+  ctx.profileUrl ? { ...value, profile_page: ctx.profileUrl } : value;
 
 async function save(ctx: ProfileToolContext, input: Parameters<typeof addEntry>[1]) {
   const { profile, event } = addEntry(ctx.getProfile(), input, ctx.actor);
@@ -76,7 +80,7 @@ async function recommend(ctx: ProfileToolContext, type: ShortType, city: string 
   const profile = ctx.getProfile();
   const signals = selectSignals(profile, toType(type));
   if (signals.entities.length === 0 && signals.tags.length === 0) {
-    return { results: [], note: "The profile has no likes yet. Add a few things first." };
+    return { type, ...(city ? { city } : {}), results: [], note: "The profile has no likes yet. Add a few things first." };
   }
   const disliked = new Set(profile.entries.filter((e) => e.strength === "dislike").map((e) => e.qlooId));
   const known = new Set(profile.entries.map((e) => e.qlooId));
@@ -88,11 +92,18 @@ async function recommend(ctx: ProfileToolContext, type: ShortType, city: string 
     take: take + known.size,
   });
   return {
+    type,
+    ...(city ? { city } : {}),
     based_on: [...signals.entities, ...signals.tags].map((s) => s.name),
     results: entities
       .filter((s) => !disliked.has(s.entity.entityId) && !known.has(s.entity.entityId))
       .slice(0, take)
-      .map((s) => ({ name: s.entity.name, disambiguation: s.entity.disambiguation, affinity: Math.round((s.affinity ?? 0) * 100) / 100 })),
+      .map((s) => ({
+        entity_id: s.entity.entityId,
+        name: s.entity.name,
+        disambiguation: s.entity.disambiguation,
+        affinity: Math.round((s.affinity ?? 0) * 100) / 100,
+      })),
   };
 }
 
@@ -135,7 +146,7 @@ export async function runProfileTool(ctx: ProfileToolContext, name: string, args
         source: ctx.actor,
         ...(e.disambiguation ? { disambiguation: e.disambiguation } : {}),
       });
-      return { saved: true, name: e.name, disambiguation: e.disambiguation, strength, event_id: event.id };
+      return withProfilePage(ctx, { saved: true, name: e.name, disambiguation: e.disambiguation, strength, event_id: event.id });
     }
     case "add_vibe":
     case "propose_rule": {
@@ -145,6 +156,13 @@ export async function runProfileTool(ctx: ProfileToolContext, name: string, args
       if (name === "add_vibe" && !isStrength(strength)) return { error: "invalid strength" };
       const found = await resolveTag(ctx, query, str(args.tag_id));
       if (!("match" in found) || !found.match) {
+        if (found.choices.length === 0) {
+          return {
+            saved: false,
+            reason: "no match",
+            instruction: "Nothing matched that text. Call again with just the thing as a short phrase, e.g. 'chain' rather than 'never show me chain restaurants'.",
+          };
+        }
         return {
           saved: false,
           choices: found.choices.map((t) => ({ tag_id: t.id, name: t.name })),
@@ -157,8 +175,14 @@ export async function runProfileTool(ctx: ProfileToolContext, name: string, args
           ? await save(ctx, { kind: "vibe", qlooId: tag.id, name: tag.name, strength: strength as (typeof STRENGTHS)[number], source: ctx.actor })
           : await save(ctx, { kind: "rule", qlooId: tag.id, name: tag.name, source: ctx.actor });
       return name === "add_vibe"
-        ? { saved: true, vibe: tag.name, strength, event_id: event.id }
-        : { saved: true, rule: tag.name, status: "pending", note: "The user must approve this rule on their focal profile page.", event_id: event.id };
+        ? withProfilePage(ctx, { saved: true, vibe: tag.name, strength, event_id: event.id })
+        : withProfilePage(ctx, {
+            saved: true,
+            rule: tag.name,
+            status: "pending",
+            note: "The user must approve this rule on their focal profile page.",
+            event_id: event.id,
+          });
     }
     case "remove_entry": {
       const target = str(args.name);
@@ -168,7 +192,7 @@ export async function runProfileTool(ctx: ProfileToolContext, name: string, args
       const { profile, event } = removeEntry(ctx.getProfile(), matches[0]!.id, ctx.actor);
       await ctx.commit(profile, event);
       ctx.events.push(event);
-      return { removed: true, name: matches[0]!.name, event_id: event.id };
+      return withProfilePage(ctx, { removed: true, name: matches[0]!.name, event_id: event.id });
     }
     case "read_profile":
       return { profile: summarizeProfile(ctx.getProfile()) || "empty" };

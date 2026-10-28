@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { LogIn, LogOut, MessageCircle, Plug, UserRound } from "lucide-react";
+import { LogIn, LogOut, MessageCircle, Plug, SlidersHorizontal, UserRound } from "lucide-react";
 import { buttonVariants } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -66,6 +66,10 @@ export function AccountMenu({ className }: { className?: string }) {
         <DropdownMenuItem render={<Link href="/connect" />}>
           <Plug />
           Connect extension
+        </DropdownMenuItem>
+        <DropdownMenuItem render={<Link href="/profile" />}>
+          <SlidersHorizontal />
+          Profile
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <form method="post" action="/sign-out">

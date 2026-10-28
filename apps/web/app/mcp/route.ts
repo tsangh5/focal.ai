@@ -1,7 +1,7 @@
 import { handleHostedRequest } from "@focal-ai/mcp/hosted";
 import { getDb } from "@/lib/server/db";
 import { mcpDeps } from "@/lib/server/mcp/deps";
-import { mcpUnauthorized, resolveMcpCaller } from "@/lib/server/mcp/auth";
+import { mcpUnauthorized, publicOrigin, resolveMcpCaller } from "@/lib/server/mcp/auth";
 import { checkRateLimit } from "@/lib/server/rateLimit";
 
 const RATE_LIMIT = { limit: 120, windowMs: 60000 };
@@ -19,7 +19,7 @@ async function handle(req: Request): Promise<Response> {
       { status: 429, headers: { "Retry-After": String(Math.ceil(limit.retryAfterMs / 1000)) } },
     );
   }
-  return handleHostedRequest(req, mcpDeps(db, caller.userId, caller.client), {
+  return handleHostedRequest(req, mcpDeps(db, caller.userId, caller.client, `${publicOrigin(req)}/profile`), {
     token: "",
     clientId: caller.client,
     scopes: caller.scopes,

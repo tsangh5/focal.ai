@@ -17,7 +17,7 @@ const qloo = {
     durationMs: 1,
     raw: null,
   }),
-  searchTags: async () => ({ tags: [{ id: "urn:tag:chain", name: "chain" }], raw: null }),
+  searchTags: async ({ query }: { query: string }) => ({ tags: /chain/i.test(query) ? [{ id: "urn:tag:chain", name: "chain" }] : [], raw: null }),
   insights: async () => ({
     entities: [
       { entity: entity("Q-rin", "Rintaro", "urn:entity:place"), affinity: 0.99, rankIndex: 0 },
@@ -29,12 +29,13 @@ const qloo = {
   getEntities: async () => ({ entities: [], raw: null }),
 } as unknown as QlooClient;
 
-function deps(start: ProfileV2 = createEmptyProfileV2()) {
+function deps(start: ProfileV2 = createEmptyProfileV2(), profileUrl = "https://focal.test/profile") {
   let profile = start;
   const commits: ActivityEvent[] = [];
   const d: HostedDeps = {
     qloo,
     actor: "mcp:claude",
+    profileUrl,
     loadProfile: async () => profile,
     commit: async (next, event) => {
       profile = next;
@@ -62,7 +63,8 @@ const call = async (d: HostedDeps, name: string, args: Record<string, unknown> =
   const { result } = await rpc(d, "tools/call", { name, arguments: args });
   const content = result.content as { text: string }[];
   const text = content[0]!.text;
-  return { isError: result.isError, value: (text.startsWith("{") ? JSON.parse(text) : { message: text }) as Record<string, unknown> };
+  const value = (text.startsWith("{") ? JSON.parse(text) : { message: text }) as Record<string, unknown>;
+  return { isError: result.isError, value, structured: result.structuredContent as Record<string, unknown> | undefined };
 };
 
 describe("hosted MCP server", () => {
@@ -82,10 +84,55 @@ describe("hosted MCP server", () => {
     expect(names.some((n) => /setting/.test(n))).toBe(false);
   });
 
+  it("pins tool annotations and ui metadata", async () => {
+    const { d } = deps();
+    const { result } = await rpc(d, "tools/list");
+    const tools = result.tools as { name: string; annotations?: Record<string, unknown>; _meta?: Record<string, unknown> }[];
+    const ann = (name: string) => tools.find((t) => t.name === name)?.annotations;
+    const meta = (name: string) => tools.find((t) => t.name === name)?._meta;
+    for (const n of ["read_profile", "taste_summary"]) {
+      expect(ann(n)).toMatchObject({ readOnlyHint: true, destructiveHint: false, openWorldHint: false });
+    }
+    for (const n of ["search_entities", "recommend", "rank_list"]) {
+      expect(ann(n)).toMatchObject({ readOnlyHint: true, destructiveHint: false, openWorldHint: true });
+    }
+    for (const n of ["add_thing", "add_vibe"]) {
+      expect(ann(n)).toMatchObject({ readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true });
+    }
+    expect(ann("propose_rule")).toMatchObject({ readOnlyHint: false, destructiveHint: false, openWorldHint: true });
+    expect(ann("remove_entry")).toMatchObject({ readOnlyHint: false, destructiveHint: true, openWorldHint: false });
+    expect(meta("rank_list")).toMatchObject({ ui: { resourceUri: "ui://focal/ranked-list-v1.html" } });
+    expect(meta("recommend")).toMatchObject({ ui: { resourceUri: "ui://focal/recommendations-v1.html" } });
+    expect((meta("add_thing")?.ui as { visibility?: string[] })?.visibility).toContain("app");
+  });
+
+  it("serves both widget resources", async () => {
+    const { d } = deps();
+    const { result } = await rpc(d, "resources/list");
+    const uris = (result.resources as { uri: string }[]).map((r) => r.uri);
+    expect(uris).toEqual(expect.arrayContaining(["ui://focal/ranked-list-v1.html", "ui://focal/recommendations-v1.html"]));
+    for (const uri of uris) {
+      const read = await rpc(d, "resources/read", { uri });
+      const [content] = (read.result.contents as { mimeType: string; text: string }[]);
+      expect(content!.mimeType).toBe("text/html;profile=mcp-app");
+      expect(content!.text).toContain("ui/notifications/tool-result");
+      expect(content!.text).toContain("tools/call");
+      expect(content!.text).not.toContain("innerHTML");
+    }
+  });
+
+  it("returns structuredContent matching the JSON text block", async () => {
+    const { d } = deps();
+    const read = await call(d, "taste_summary");
+    expect(read.structured).toEqual(read.value);
+    const saved = await call(d, "add_thing", { name: "rintaro", type: "place", strength: "love" });
+    expect(saved.structured).toEqual(saved.value);
+  });
+
   it("saves one clear match attributed to the assistant", async () => {
     const { d, commits, profile } = deps();
     const { value } = await call(d, "add_thing", { name: "rintaro", type: "place", strength: "love" });
-    expect(value).toMatchObject({ saved: true, name: "Rintaro" });
+    expect(value).toMatchObject({ saved: true, name: "Rintaro", profile_page: "https://focal.test/profile" });
     expect(commits[0]).toMatchObject({ actor: "mcp:claude", action: "add" });
     expect(profile().entries[0]).toMatchObject({ name: "Rintaro", source: "mcp:claude" });
   });
@@ -98,6 +145,14 @@ describe("hosted MCP server", () => {
     expect(commits).toHaveLength(0);
     const picked = await call(d, "add_thing", { name: "Dune", type: "movie", strength: "like", entity_id: "Q2" });
     expect(picked.value).toMatchObject({ saved: true });
+  });
+
+  it("tells the assistant to retry with a short phrase when no tag matches", async () => {
+    const { d, commits } = deps();
+    const { value } = await call(d, "propose_rule", { rule: "Never show me anything loud." });
+    expect(value).toMatchObject({ saved: false, reason: "no match" });
+    expect(value).not.toHaveProperty("choices");
+    expect(commits).toHaveLength(0);
   });
 
   it("keeps proposed rules pending", async () => {
@@ -119,7 +174,9 @@ describe("hosted MCP server", () => {
     const { d } = deps();
     await call(d, "add_thing", { name: "rintaro", type: "place", strength: "love" });
     const { value } = await call(d, "recommend", { type: "place", city: "San Francisco" });
+    expect(value).toMatchObject({ type: "place", city: "San Francisco" });
     expect((value.results as { name: string }[]).map((r) => r.name)).toEqual(["Nopalito"]);
+    expect((value.results as { entity_id?: string }[])[0]?.entity_id).toBe("Q-new");
   });
 
   it("validates tool input and forwards rank_list", async () => {

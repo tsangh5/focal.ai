@@ -129,14 +129,34 @@ Status: [ ] · **P1** · Deps: X-05 · Owns: `apps/web/app/(site)/{why,try}/**`,
 ## Wave M — outside assistants
 
 ### M-01 · Hosted MCP with OAuth and write tools
-Status: [ ] · **P1** · Deps: V-04, P-03 · Owns: `packages/mcp/**`, `apps/web/app/mcp/**`
+Status: [ ] (code merged in #8; acceptance runs in M-03) · **P1** · Deps: V-04, P-03 · Owns: `packages/mcp/**`, `apps/web/app/mcp/**`
 HTTP transport with OAuth; tools from §5.10; ambiguity refusal; pending rules; attribution "via <assistant>"; stdio kept for local clients.
 **Acceptance:** ChatGPT and claude.ai connect and add an entry that appears in the feed with undo.
 
 ### M-02 · Connect page
-Status: [ ] · **P1** · Deps: M-01 · Owns: `apps/web/app/(site)/connect/**`
-Step-by-step connection for ChatGPT, claude.ai, Claude Desktop and Claude Code.
+Status: [ ] · **P1** · Deps: M-01 · Owns: `apps/web/app/connect/**`, `apps/web/components/connect/**`
+Step-by-step connection for ChatGPT, claude.ai, Claude Desktop and Claude Code. ChatGPT follows its current flow: chatgpt.com/plugins → **+** → Add custom MCP server → OAuth → Create as a plugin, then `@focal` in a chat.
 **Acceptance:** each path verified once by hand.
+
+### M-03 · Deploy, configure AuthKit, verify in ChatGPT and claude.ai
+Status: [ ] · **P0** · Deps: S-03, M-02 · Owns: `docs/deployment.md`, `scripts/smoke-prod.ts` (MCP checks)
+Production env adds `WORKOS_AUTHKIT_DOMAIN` and `FOCAL_PUBLIC_URL`. In WorkOS → Connect → Configuration, enable Client ID Metadata Documents and dynamic client registration, and add `https://<host>/mcp` as the default Resource Indicator. `pnpm smoke` checks MCP discovery: the protected-resource metadata names `<base>/mcp` and an authorization server; an unauthenticated `POST /mcp` returns 401 with `resource_metadata`; the authorization server advertises `S256` and a registration method.
+**Acceptance:** smoke passes against production. In ChatGPT (custom MCP server, OAuth) and claude.ai: sign in, read the profile, save a thing (ChatGPT asks to confirm), an ambiguous name returns choices, a proposed rule stays pending, `rank_list` renders; the activity shows "via chatgpt" / "via claude".
+
+### M-04 · ChatGPT-ready tool surface
+Status: [ ] · **P1** · Deps: M-01 · Owns: `packages/mcp/src/{hosted,profileTools}.ts`, `packages/mcp/tests/**`
+Every tool declares `readOnlyHint`, `destructiveHint` and `openWorldHint`; results carry `structuredContent` next to the JSON text block; descriptions say when to use each tool; write results link the profile page.
+**Acceptance:** tests pin the annotations of all 9 tools and `structuredContent` on results.
+
+### M-05 · In-chat UI (MCP Apps)
+Status: [ ] · **P1** · Deps: M-04 · Owns: `packages/mcp/src/widgets.ts`, `packages/mcp/src/hosted.ts`, `packages/mcp/tests/**`
+`rank_list` renders a ranked card (lifted items with their label first, the rest in original order); `recommend` renders cards with Love / Like buttons that save through `add_thing` from the widget. Resources are `ui://focal/…` with `text/html;profile=mcp-app`, self-contained (no external fetches), and render data as text only.
+**Acceptance:** resource list/read tests; both widgets render from a tool-result notification in a local harness; they render in ChatGPT after M-03.
+
+### M-06 · Approve and undo page (W-03 slice)
+Status: [ ] · **P0** · Deps: P-03 · Owns: `apps/web/app/profile/**`, `apps/web/app/api/profile/**`, `apps/web/components/profile/**`
+Signed-in `/profile` with pending rules (Approve), recent activity with who made each change (Undo), and the current entries. Assistant write results point to it. W-03 later grows this into the full profile, activity and settings pages.
+**Acceptance:** route tests for approve and undo (attributed, version-guarded); a rule proposed over MCP can be approved and an assistant's save can be undone from the page.
 
 ---
 

@@ -6,9 +6,9 @@
 
 | Component | Runs on | Notes |
 | --- | --- | --- |
-| Studio (`apps/web`) | Vercel (primary) or any Node 22+ container (fallback) | Next.js 16 App Router; the only HTTP surface; holds `QLOO_API_KEY` server-side. |
-| MCP server (`packages/mcp`) | Your own machine, stdio only | Never hosted — no remote endpoint, no OAuth. See `packages/mcp/README.md`. |
-| Database | None, by design | The taste profile lives in the visitor's browser (`localStorage`, key `focal.profile.v1`); the server is stateless and discards the profile after each request. |
+| Studio (`apps/web`) | Vercel (primary) or any Node 22+ container (fallback) | Next.js 16 App Router; the only HTTP surface; holds `QLOO_API_KEY` server-side. Hosts the MCP endpoint at `/mcp`. |
+| Database (Neon Postgres) | Neon | Accounts, profiles, activity, extension sessions and caches. `DATABASE_URL` (+ `DATABASE_URL_UNPOOLED` for migrations); without it the site runs unsigned, dev-only paths. |
+| Local MCP server (`packages/mcp`) | Your own machine, stdio only | Development variant — the production endpoint is the hosted `/mcp` above. See `packages/mcp/README.md`. |
 
 ## 2. Primary target: Vercel
 
@@ -62,16 +62,40 @@ Verify exactly as in 2.4 against `http://localhost:3000` (same `/api/health` che
 
 Running without Docker: `pnpm build` then `QLOO_API_KEY=your_key pnpm --filter @focal-ai/web start` on any Node 22+ host.
 
-## 4. MCP server (local only — not hosted)
+## 4. Hosted MCP
 
-- stdio only, read-only, runs on a local machine next to the agent: `pnpm --filter @focal-ai/mcp start`.
-- Never expose it on a network; there is no hosted endpoint and no OAuth.
-- Claude Desktop config, the 6 tools, and limitations: `packages/mcp/README.md`.
-- Without `QLOO_API_KEY` it still starts; Qloo-backed tools return a clear error until a key is set. `QLOO_MOCK=1` serves local fixtures (no network).
+The website serves a hosted MCP server at `https://<host>/mcp` (Streamable HTTP, `apps/web/app/mcp/route.ts` → `packages/mcp/src/hosted.ts`). Assistants sign in with OAuth via WorkOS AuthKit; extension `fx_` session tokens are also accepted for clients that only support a static bearer. The 9 profile tools, write rules and in-chat widgets: `packages/mcp/README.md` and `docs/tickets.md` (Wave M).
+
+### Environment
+
+Production adds two variables on top of §2.3:
+
+| Variable | Required | Notes |
+| --- | --- | --- |
+| `WORKOS_AUTHKIT_DOMAIN` | Yes for OAuth | AuthKit domain, e.g. `focal.authkit.app`; the issuer for MCP access tokens. Without it `/mcp` still accepts `fx_` tokens but OAuth clients can't sign in. |
+| `FOCAL_PUBLIC_URL` | Yes | Canonical origin (`https://<host>`). Builds the protected-resource metadata, `resource_metadata` challenge and `profile_page` links; forwarded headers are the fallback. |
+| `DATABASE_URL` | Yes | `/mcp` returns 503 without a database — profiles live in Postgres. |
+
+### WorkOS setup
+
+In the WorkOS dashboard → **Connect → Configuration**:
+
+1. Enable **Client ID Metadata Documents** (CIMD) and **Dynamic Client Registration** — ChatGPT and claude.ai register as OAuth clients this way.
+2. Add `https://<host>/mcp` as a **Resource Indicator** and set it as the default, so access tokens carry `/mcp` in `aud`.
+3. Point clients at `https://<host>/mcp`; they discover OAuth via `/.well-known/oauth-protected-resource/mcp` and the `WWW-Authenticate` challenge.
+
+### Verify
+
+- `pnpm smoke` (`SMOKE_BASE_URL=https://<host>`) checks the discovery chain: protected-resource metadata names `<base>/mcp` and an authorization server, `POST /mcp` unauthenticated returns 401 with `resource_metadata`, and the authorization server advertises `S256` plus a registration method.
+- **ChatGPT**: `chatgpt.com/plugins` → **+** → Add custom MCP server → name it `focal`, paste the URL, OAuth → Create as a plugin → install, sign in, then `@focal` in a chat.
+- **claude.ai**: Settings → Connectors → Add custom connector → name `focal`, paste the URL → Connect and sign in.
+- In either client: read the profile, save a thing (an ambiguous name returns choices), propose a rule (stays pending on `/profile`), and `rank_list` — writes show in the activity as "via chatgpt" / "via claude" and are undoable there.
+
+The local stdio server (`pnpm --filter @focal-ai/mcp start`) stays for development only; without `QLOO_API_KEY` it still starts and `QLOO_MOCK=1` serves local fixtures.
 
 ## 5. Operational notes
 
 - **Rate limits** are in-process, per instance — 30 req/min on `/api/qloo/search`, 20 req/min on `/api/qloo/rank`, keyed by the first `x-forwarded-for` hop. Fine for demo scale; counters reset on restart/redeploy. A shared store would only matter for multi-instance fairness.
-- **Logs contain no taste data and no keys.** The profile travels per request and is discarded; `meta.qlooRequest` excludes the API key, and route tests assert no key material in responses.
-- **No CORS configuration is needed** — the Studio calls its own same-origin route handlers, and the MCP server speaks stdio, not HTTP.
+- **Logs contain no taste data and no keys.** Anonymous rank requests carry the profile per request and it's discarded; signed-in profiles persist in Postgres. `meta.qlooRequest` excludes the API key, and route tests assert no key material in responses.
+- **No CORS configuration is needed** — the Studio calls its own same-origin route handlers, and `/mcp` speaks bearer-authenticated HTTP, not browser cookies.
 - **What leaves the browser at all**: entity name strings, city strings, Qloo entity IDs, and the profile JSON — to our server (Qloo then sees names/city/IDs). No page HTML, no DOM, no form values.

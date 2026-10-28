@@ -6,11 +6,12 @@ import { rankPage } from "../page/rank";
 import { getQlooClient } from "../qloo";
 
 /** Wires the hosted MCP tools to one user's Neon-backed profile and the page ranker. */
-export function mcpDeps(db: Db, userId: string, client: string): HostedDeps {
+export function mcpDeps(db: Db, userId: string, client: string, profileUrl: string): HostedDeps {
   const store = dbProfileStore(db, userId);
   return {
     qloo: getQlooClient(),
     actor: `mcp:${client}` as EntrySource,
+    profileUrl,
     loadProfile: () => store.load(),
     commit: (next, event) => store.commit(next, event),
     async rankList({ type, items, city }, profile) {

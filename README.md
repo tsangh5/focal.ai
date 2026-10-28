@@ -134,59 +134,29 @@ That is the cold start solved. The more you seed, the sharper the graph gets.
 
 ## MCP server
 
-focal.ai will ship a [Model Context Protocol](https://modelcontextprotocol.io) server, so the assistants you already talk to can read and write your taste graph. Tell ChatGPT about a restaurant you loved last night, and the next product grid you open is already resorted.
+The website hosts a [Model Context Protocol](https://modelcontextprotocol.io) server at `/mcp`, signed in with OAuth (WorkOS AuthKit), so the assistants you already talk to can read and write your taste graph. Tell ChatGPT about a restaurant you loved last night, and the next product grid you open is already resorted.
 
-> The MCP server is not shipped yet: `packages/mcp` is a stub today that exits with a pointer to its ticket (T-20). This section documents the planned interface; it is on the [roadmap](#roadmap).
-
-```bash
-pnpm --filter @focal-ai/mcp start
-```
-
-### Claude Desktop
-
-`~/Library/Application Support/Claude/claude_desktop_config.json`
-
-```json
-{
-  "mcpServers": {
-    "focal": {
-      "command": "npx",
-      "args": ["-y", "@focal-ai/mcp"],
-      "env": {
-        "FOCAL_API_KEY": "your_focal_key"
-      }
-    }
-  }
-}
-```
-
-### Claude Code
-
-```bash
-claude mcp add focal -e FOCAL_API_KEY=your_focal_key -- npx -y @focal-ai/mcp
-```
-
-### ChatGPT and other HTTP clients
-
-```bash
-pnpm --filter @focal-ai/mcp start -- --transport http --port 8787
-```
-
-Then point your client at `https://your-host/mcp`. OAuth and a hosted endpoint are on the [roadmap](#roadmap).
+Connect from the site's `/connect` page — step-by-step for ChatGPT, claude.ai, Claude Desktop and Claude Code.
 
 ### Tools exposed
 
-| Tool                 | What it does                                                     |
-| -------------------- | ---------------------------------------------------------------- |
-| `get_taste_profile`  | Returns the current taste vector, top affinities, and confidence  |
-| `record_affinity`    | Adds a signal: liked, loved, dismissed, or blocked                |
-| `search_entities`    | Resolves free text to Qloo entities with disambiguation           |
-| `get_recommendations`| Cross domain recommendations from the current profile             |
-| `explain_ranking`    | Returns why a given page element scored the way it did            |
-| `set_render_policy`  | Creates or edits a per site render policy in natural language     |
-| `preview_page`       | Dry runs a URL and returns the planned DOM mutations as a diff    |
+| Tool             | What it does                                                              |
+| ---------------- | ------------------------------------------------------------------------- |
+| `read_profile`   | Reads the taste profile: loved/liked/disliked things, vibes, rules        |
+| `taste_summary`  | Counts and a one-line summary                                             |
+| `search_entities`| Resolves free text to Qloo entities                                       |
+| `add_thing`      | Saves a thing; ambiguous names return choices, never a guess              |
+| `add_vibe`       | Saves a vibe (a style or quality)                                         |
+| `propose_rule`   | Proposes a hard rule, pending until approved on `/profile`                |
+| `remove_entry`   | Removes an entry by name; undoable on `/profile`                          |
+| `recommend`      | Recommendations from the profile, excluding saved and disliked things     |
+| `rank_list`      | Ranks a shared list the way the extension does — lifts, labels, folds      |
 
-Every write is logged, reversible, and visible in the extension's activity feed. An agent can shape your taste graph. It cannot do it quietly.
+Every write is attributed (`via chatgpt`, `via claude`), logged and undoable on the `/profile` page. `rank_list` and `recommend` render in-chat cards where the host supports MCP Apps (e.g. ChatGPT).
+
+### Local stdio server
+
+For development there's also a local stdio variant (`pnpm --filter @focal-ai/mcp start`) — read-only, no account needed; see `packages/mcp/README.md`.
 
 ---
 

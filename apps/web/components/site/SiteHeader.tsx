@@ -6,6 +6,7 @@ const LINKS = [
   { href: "/", label: "Studio" },
   { href: "/chat", label: "Chat" },
   { href: "/connect", label: "Extension" },
+  { href: "/profile", label: "Profile" },
 ] as const;
 
 export function SiteHeader({ active }: { active?: (typeof LINKS)[number]["href"] }) {
