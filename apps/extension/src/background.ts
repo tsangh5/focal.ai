@@ -3,6 +3,9 @@ import { FOCAL_ORIGIN, isTrustedOrigin } from "./config";
 import { parseSettings } from "./settings";
 import { getSession, getSettings, setSession, setSettings, setTabResult } from "./storage";
 
+/** A hung server must not pin a run (and its chip) forever. */
+const FETCH_TIMEOUT_MS = 15_000;
+
 async function call<T>(method: "GET" | "POST" | "PUT", path: string, body?: unknown): Promise<BackgroundReply<T>> {
   const session = await getSession();
   if (!session) return { ok: false, error: "signed_out", status: 401 };
@@ -11,6 +14,8 @@ async function call<T>(method: "GET" | "POST" | "PUT", path: string, body?: unkn
       method,
       headers: { "content-type": "application/json", authorization: `Bearer ${session.token}` },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      // The abort rejects fetch (or the body read) into the catch below.
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
     if (res.status === 401) await setSession(null);
     if (!res.ok) return { ok: false, error: `http_${res.status}`, status: res.status };
@@ -23,20 +28,28 @@ async function call<T>(method: "GET" | "POST" | "PUT", path: string, body?: unkn
 const post = <T>(path: string, body: unknown) => call<T>("POST", path, body);
 
 const SETTINGS_REFRESH_MS = 5 * 60 * 1000;
+/** When a pull last succeeded. A failed one leaves it, so the next run tries again. */
 let settingsFetchedAt = 0;
+let settingsPulling = false;
 
 /**
  * Sites to skip and sites switched off live on the server (edited on the
  * website); keep the local copy fresh so eligibility checks never wait on it.
- * Incognito stays a per-browser choice.
+ * Incognito stays a per-browser choice. One pull at a time: identify calls
+ * that arrive while one is out don't start another.
  */
 async function refreshSettings(force = false): Promise<void> {
-  if (!force && Date.now() - settingsFetchedAt < SETTINGS_REFRESH_MS) return;
-  settingsFetchedAt = Date.now();
-  const res = await call<{ skipSites: string[]; siteOff: string[] }>("GET", "/api/settings");
-  if (!res.ok) return;
-  const current = await getSettings();
-  await setSettings(parseSettings({ ...res.data, incognito: current.incognito }));
+  if (!force && (settingsPulling || Date.now() - settingsFetchedAt < SETTINGS_REFRESH_MS)) return;
+  settingsPulling = true;
+  try {
+    const res = await call<{ skipSites: string[]; siteOff: string[] }>("GET", "/api/settings");
+    if (!res.ok) return;
+    const current = await getSettings();
+    await setSettings(parseSettings({ ...res.data, incognito: current.incognito }));
+    settingsFetchedAt = Date.now();
+  } finally {
+    settingsPulling = false;
+  }
 }
 
 async function pushSettings(): Promise<void> {
