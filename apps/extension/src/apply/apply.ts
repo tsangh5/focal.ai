@@ -14,6 +14,8 @@ export type Verdict = "more" | "less";
 export interface ApplyOptions {
   onWhy?: () => void;
   onUndo?: () => void;
+  /** The user clicked the strip's Undo; never called for programmatic undos (a rerun replacing the plan, a stand-down). */
+  onUserUndo?: () => void;
   /** "More like this" / "Not for me" on a label; resolves whether it was saved. */
   onFeedback?: (clientId: string, verdict: Verdict) => Promise<boolean>;
   /** Force a mode; by default flex / grid containers use CSS order. */
@@ -433,6 +435,7 @@ export function applyPlan(target: ApplyTarget, plan: RenderPlan, opts: ApplyOpti
     undo.addEventListener("click", (event) => {
       if (!focalTrusted(event, el)) return;
       handle.undo();
+      opts.onUserUndo?.();
     });
     el.append(undo);
     inserted.push(el);

@@ -37,6 +37,9 @@ export async function getTabResult(tabId: number): Promise<TabResult | null> {
   return (got[key] as TabResult | undefined) ?? null;
 }
 
-export async function setTabResult(tabId: number, result: TabResult): Promise<void> {
-  await chrome.storage.session.set({ [`result:${tabId}`]: result });
+/** A null id clears the tab's result, so "Why this order?" never opens an old page's ranking. */
+export async function setTabResult(tabId: number, result: { pageResultId: string | null; lifted: number }): Promise<void> {
+  const key = `result:${tabId}`;
+  if (result.pageResultId === null) await chrome.storage.session.remove(key);
+  else await chrome.storage.session.set({ [key]: result });
 }
