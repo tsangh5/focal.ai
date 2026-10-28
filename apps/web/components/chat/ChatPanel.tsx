@@ -102,9 +102,8 @@ export function ChatPanel({ email }: { email: string }) {
         <div className="flex flex-col gap-1">
           <h1 className="text-2xl font-semibold tracking-tight text-ink">Tell {AGENT_NAME} what you like</h1>
           <p className="text-sm text-muted">
-            Music, films, TV, restaurants, hotels, books, podcasts, games, brands, places to travel, people you follow
-            — anything Qloo knows. {AGENT_NAME} only saves exact matches, and asks when a match is unclear. Signed in
-            as {email}.
+            Music, films, TV, restaurants, hotels, books, podcasts, games, brands, places to travel, people you
+            follow. {AGENT_NAME} only saves exact matches, and asks when a match is unclear. Signed in as {email}.
           </p>
         </div>
       </div>
