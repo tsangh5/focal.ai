@@ -32,7 +32,9 @@ export function tryLinks(entries: ProfileEntry[]): TryLink[] {
   if (types.has("urn:entity:movie") || types.has("urn:entity:artist") || types.size === 0) {
     links.push({ label: "Popular films on Letterboxd", href: "https://letterboxd.com/films/popular/" });
   }
+  if (types.has("urn:entity:tv_show")) links.push({ label: "Most popular TV on IMDb", href: "https://www.imdb.com/chart/tvmeter/" });
   if (types.has("urn:entity:book")) links.push({ label: "Popular books on Goodreads", href: "https://www.goodreads.com/book/popular_by_date" });
+  if (types.has("urn:entity:podcast")) links.push({ label: "Top podcasts on Podchaser", href: "https://www.podchaser.com/charts/top-podcasts" });
   if (types.has("urn:entity:destination")) links.push({ label: "Hotels on Booking.com", href: "https://www.booking.com/" });
   if (types.has("urn:entity:videogame")) links.push({ label: "Top sellers on Steam", href: "https://store.steampowered.com/search/?filter=topsellers" });
   return links;

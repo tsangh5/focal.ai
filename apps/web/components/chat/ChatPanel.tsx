@@ -18,14 +18,24 @@ interface Message {
   events?: ActivityEvent[];
 }
 
+/** Spread across entity types on purpose: the examples are most of what
+ *  people read before deciding what focal accepts. */
 const PLACEHOLDERS = [
   "I love Fugazi and Radiohead",
   "I like Rintaro in San Francisco",
-  "I'm into natural wine bars",
+  "Severance is my favourite show",
+  "I'm really into Hollow Knight",
+  "Add the Blue Bottle brand",
+  "I want to go to Lisbon",
   "Never show me chain restaurants",
 ];
 
-const SUGGESTIONS = ["I love Fugazi", "I like Rintaro in San Francisco", "What do you know about my taste?"];
+const SUGGESTIONS = [
+  "I love Fugazi",
+  "Severance and Dune",
+  "I like Rintaro in San Francisco",
+  "What do you know about my taste?",
+];
 
 /** The API keeps the last 40 turns; older ones drop off the request, not the screen. */
 const MAX_TURNS = 40;
@@ -92,8 +102,9 @@ export function ChatPanel({ email }: { email: string }) {
         <div className="flex flex-col gap-1">
           <h1 className="text-2xl font-semibold tracking-tight text-ink">Tell {AGENT_NAME} what you like</h1>
           <p className="text-sm text-muted">
-            Name artists, places, books or shows. {AGENT_NAME} only saves exact matches, and asks when a match is
-            unclear. Signed in as {email}.
+            Music, films, TV, restaurants, hotels, books, podcasts, games, brands, places to travel, people you follow
+            — anything Qloo knows. {AGENT_NAME} only saves exact matches, and asks when a match is unclear. Signed in
+            as {email}.
           </p>
         </div>
       </div>

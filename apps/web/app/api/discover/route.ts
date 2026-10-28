@@ -11,14 +11,25 @@ import { checkRateLimit } from "@/lib/server/rateLimit";
 const RATE_LIMIT = { limit: 30, windowMs: 60000 };
 const TAKE = 8;
 
-const TYPES = ["place", "movie", "tv_show", "artist", "book", "brand"] as const;
+/** Every type Qloo ranks; all ten verified live against insights. */
+const TYPES = [
+  "place",
+  "movie",
+  "tv_show",
+  "artist",
+  "book",
+  "brand",
+  "podcast",
+  "videogame",
+  "person",
+  "destination",
+] as const;
 
 /**
- * `bias.trends` is per-type: books return
- * "urn:entity:book does not yet support trending requests" (live, 2026-10-23).
- * Verified supported: place, movie, tv_show, artist, brand.
+ * `bias.trends` is per-type — these return "does not yet support trending
+ * requests". Verified live 2026-10-28 across all ten types; the rest accept it.
  */
-const TRENDS_UNSUPPORTED = new Set<(typeof TYPES)[number]>(["book"]);
+const TRENDS_UNSUPPORTED = new Set<(typeof TYPES)[number]>(["book", "videogame", "destination"]);
 
 const querySchema = z.object({
   type: z.enum(TYPES).default("place"),

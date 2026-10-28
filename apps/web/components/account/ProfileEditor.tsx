@@ -179,7 +179,11 @@ export function ProfileEditor() {
       <Section title="Rules waiting for you" description="Assistants can suggest hard rules; they only hide anything once you approve them." entries={pending}>
         {(e) => row(e, true)}
       </Section>
-      <Section title="Things" description="Specific places, films, artists, books and brands." entries={things}>
+      <Section
+        title="Things"
+        description="Places, films, TV, music, books, podcasts, games, brands, destinations and people."
+        entries={things}
+      >
         {(e) => row(e)}
       </Section>
       <Section title="Vibes" description="Styles and qualities that nudge every ranking." entries={vibes}>

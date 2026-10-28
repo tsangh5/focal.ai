@@ -6,7 +6,8 @@ export const CHAT_TOOLS: ToolSpec[] = [
     type: "function",
     function: {
       name: "search_entities",
-      description: "Find real-world things (venues, films, artists…) by name. Use before adding when unsure.",
+      description:
+        "Find a real-world thing by name — a place, film, TV show, music artist, book, podcast, video game, brand, travel destination or public figure. Use before adding when unsure.",
       parameters: {
         type: "object",
         properties: { query: { type: "string" }, type: { type: "string", enum: TYPES }, city: { type: "string" } },

@@ -6,11 +6,11 @@ import { authEnabled } from "@/lib/server/auth/config";
 const STEPS = [
   {
     title: "Tell focal what you like",
-    body: "Chat about the bands, films, restaurants and brands you love. focal saves exact matches and asks when it isn't sure.",
+    body: "Chat about anything you love — music, films, TV, restaurants, hotels, books, podcasts, games, brands, places to travel, people you follow. focal saves exact matches and asks when it isn't sure.",
   },
   {
     title: "Browse as usual",
-    body: "On restaurant, hotel, film, music, book and shopping lists, the extension lifts the clear matches to the top and says why.",
+    body: "On restaurant, hotel, film, TV, music, book, podcast, game, shopping and travel lists, the extension lifts the clear matches to the top and says why.",
   },
   {
     title: "Stay in control",

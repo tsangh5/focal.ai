@@ -24,12 +24,18 @@ interface DiscoverResponse {
   durationMs?: number;
 }
 
+/** Every type Qloo ranks, so the UI never implies a shorter list than exists. */
 const TABS = [
   { type: "place", label: "Places" },
   { type: "movie", label: "Films" },
-  { type: "artist", label: "Artists" },
   { type: "tv_show", label: "TV" },
+  { type: "artist", label: "Music" },
   { type: "book", label: "Books" },
+  { type: "podcast", label: "Podcasts" },
+  { type: "videogame", label: "Games" },
+  { type: "brand", label: "Brands" },
+  { type: "destination", label: "Destinations" },
+  { type: "person", label: "People" },
 ] as const;
 
 type TabType = (typeof TABS)[number]["type"];
