@@ -20,5 +20,8 @@ export * from "./labels";
 export * from "./neverRun";
 export * from "./neverRunGroups";
 export * from "./pagePipeline";
+export * from "./style";
+export * from "./productScore";
+export * from "./productPipeline";
 
 export const VERSION = "0.0.1";

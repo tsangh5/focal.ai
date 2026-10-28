@@ -211,3 +211,17 @@ ADR-style record of the decisions that shaped this build. Follows [contracts.md]
 **Alternatives considered.** Submitting the Studio and building the extension afterwards; hand-written per-site adapters; a browser-local profile with a local-only MCP bridge.
 
 **Consequences.** Supersedes D-1, D-2 and D-14; amends D-3, D-7 and D-9. Adds a database, sign-in, a Jev dependency and an LLM dependency. The previous backlog moves to [archive/tickets-studio.md](./archive/tickets-studio.md) and [tickets.md](./tickets.md) becomes the extension backlog. Open technical questions are tracked in spec §8 and settled by `pnpm probe:unknowns`.
+
+---
+
+## D-16 · Products are scored on style facets, not resolved as entities
+
+**Date:** 2026-10-28 · **Status:** Proposed (facet accuracy pending `pnpm probe:unknowns jev`)
+
+**Context.** focal did nothing on a product grid such as `uniqlo.com/ca/en/men/shirts-and-polo-shirts`, silently. Three causes, each sufficient on its own: product cards fell under Jev's `not_a_thing` choice, so the page-level "is a list" answer measured 0.45 against a 0.5 cut-off; the card-name question asked for the brand, which a single-brand store never prints on the card; and had a brand come through, every card on the page would resolve to the same Qloo entity, giving every item an identical affinity and no spread for the lift step to rank on. Qloo has no `urn:entity:product`, so no amount of fixing the first two makes the entity path work for a store that sells one brand.
+
+**Decision.** Add `product` as a page type that skips resolve and insights entirely (spec §5.11). Each product is described on three facets — style, palette, formality — read from its name by Jev at rank time, or by a keyword describer in `@focal-ai/core` when no key is configured. The profile arrives as Qloo's own weighted tag vocabulary from one cached `tagAffinities` call. A hand-written synonym table joins the two, and each facet contributes the affinity of the strongest taste tag it matches. Everything after the score — z-scoring, lift, folds, labels, plan — is the code every other list already uses.
+
+**Alternatives considered.** Matching products against the user's explicitly stated vibes only (simpler, no Qloo call, but a profile of liked brands and bands with no vibes would score nothing). Doing the taste-to-garment join with an LLM per page (more flexible, but it puts the user's taste into a third-party call, adds latency inside the render gate, and is neither reviewable nor testable). Ranking the brand behind each product (works on multi-brand retailers, does nothing on the single-brand stores that prompted this).
+
+**Consequences.** `SHORT_TYPES` splits into `ENTITY_SHORT_TYPES` plus `product`, so `toInsightType` can no longer be handed a non-entity — which surfaced and fixed a latent cast in the feedback route. Feedback on a lifted product writes a vibe on the matched facet's tag rather than a thing, since there is no entity to save. The quality of the whole path rests on two things not yet measured against live keys: whether `is_list` now clears 0.5 on a product grid, and whether real taste vocabularies reach the facet synonyms at all (spec §8). A grid that matches nothing is reported `nothing_scored` and left untouched, so the failure mode is the current behaviour rather than a wrong ranking.

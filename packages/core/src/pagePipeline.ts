@@ -25,8 +25,13 @@ export interface PageItem {
   clientId: string;
   name: string;
   originalIndex: number;
-  /** Type identified for this card; items of another type than the page's are left alone. */
-  type?: InsightType;
+  /**
+   * Type identified for this card; items of another type than the page's are
+   * left alone. `"product"` is included because a product card can turn up on
+   * an entity page: it is never equal to an entity page type, so it always
+   * falls through to `skipped` rather than being resolved (§5.11).
+   */
+  type?: InsightType | "product";
   city?: string;
 }
 
@@ -72,6 +77,12 @@ export interface PageResultItem {
   label?: LiftLabel;
   boosts?: string[];
   foldedBy?: string[];
+  /**
+   * Facets a product's score came from, strongest first (§5.11). Carries the
+   * Qloo tag URN so on-page feedback can write a vibe: a product has no entity
+   * to like, but the facet behind the lift does.
+   */
+  facets?: { tagId: string; tagName: string; valueName: string; affinity: number }[];
 }
 
 export interface PageRankResult {

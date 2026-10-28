@@ -1,9 +1,14 @@
 import type { CardSnapshot, RenderPlan } from "./types";
 
-/** Qloo's 10 insight types, short form (core `urn:entity:<type>`). */
+/**
+ * Qloo's 10 insight types, short form (core `urn:entity:<type>`), plus
+ * `product`. A product is not a Qloo entity — it is scored from style facets
+ * instead of resolved (§5.11) — but it travels the same wire.
+ */
 export type InsightType =
   | "place" | "destination" | "movie" | "tv_show" | "book"
-  | "artist" | "brand" | "podcast" | "videogame" | "person";
+  | "artist" | "brand" | "podcast" | "videogame" | "person"
+  | "product";
 
 /** Sent only for a new layout: card snippets, never full HTML (§6). */
 export interface IdentifyRequest {

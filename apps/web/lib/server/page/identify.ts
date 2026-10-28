@@ -1,4 +1,5 @@
-import { createJevIdentifier } from "../jev/client";
+import { describeFromName, type ProductDescriptor } from "@focal-ai/core";
+import { createJevDescriber, createJevIdentifier } from "../jev/client";
 import type { IdentifiedItem, IdentifyBody, ShortType } from "./schemas";
 
 /** Cards whose answers fall below this are left untouched (§5.3). */
@@ -22,6 +23,15 @@ export interface Identifier {
   identify(body: IdentifyBody): Promise<PageAnswer>;
 }
 
+/**
+ * Reads the three style facets off product names (§5.11). Separate from
+ * `Identifier` because it runs at rank time and takes only names — the page
+ * snippets are not sent a second time.
+ */
+export interface ProductDescriber {
+  describe(names: string[]): Promise<ProductDescriptor[]>;
+}
+
 export class IdentifyUnavailableError extends Error {
   constructor() {
     super("identification is not configured");
@@ -36,6 +46,7 @@ const HOST_TYPES: [RegExp, ShortType][] = [
   [/(^|\.)(imdb|letterboxd|rottentomatoes|mubi)\./, "movie"],
   [/(^|\.)(bandcamp|last\.fm|pitchfork|songkick|setlist)\./, "artist"],
   [/(^|\.)(steampowered|igdb|gog|itch)\./, "videogame"],
+  [/(^|\.)(uniqlo|zara|hm|cos|muji|arket|everlane|ssense|farfetch|nordstrom|asos|gap)\./, "product"],
 ];
 
 /**
@@ -59,6 +70,34 @@ export function createMockIdentifier(): Identifier {
       return { isList: type !== null && cards.filter((c) => c.name).length >= 3, cards };
     },
   };
+}
+
+let describer: ProductDescriber | undefined;
+
+/**
+ * Jev when keyed, otherwise the keyword describer in @focal-ai/core. Unlike
+ * `getIdentifier` this never throws: a keyless deployment still ranks product
+ * pages, just from the words in the title rather than a model's reading.
+ */
+export function getDescriber(): ProductDescriber {
+  if (describer) return describer;
+  const apiKey = process.env.QLOO_MOCK === "1" ? undefined : process.env.TYPESAFE_API_KEY?.trim();
+  if (apiKey) {
+    return (describer = createJevDescriber({
+      apiKey,
+      baseUrl: process.env.TYPESAFE_BASE_URL,
+      model: process.env.TYPESAFE_MODEL,
+    }));
+  }
+  return (describer = {
+    async describe(names) {
+      return names.map((n) => describeFromName(n));
+    },
+  });
+}
+
+export function __setDescriberForTests(d: ProductDescriber | undefined): void {
+  describer = d;
 }
 
 let identifier: Identifier | undefined;

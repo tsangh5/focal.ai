@@ -56,6 +56,29 @@ export function groundedReasonNames(
   return names;
 }
 
+/**
+ * Label for a lifted product (§5.11). A product has no Qloo entity to credit,
+ * so the reason names the facets its score came from: "Top pick for you ·
+ * your taste leans minimal and workwear". "leans" rather than "you like",
+ * because the facet is Qloo's reading of the taste set, not something the
+ * user said in those words.
+ */
+export function buildProductLiftLabel(
+  badge: LiftBadge,
+  matches: { valueName: string; affinity: number }[],
+): LiftLabel {
+  const reasonNames: string[] = [];
+  for (const m of [...matches].sort((a, b) => b.affinity - a.affinity)) {
+    if (reasonNames.length >= MAX_REASONS) break;
+    if (!reasonNames.includes(m.valueName)) reasonNames.push(m.valueName);
+  }
+  const words = BADGE_TEXT[badge];
+  if (reasonNames.length === 0) return { badge, text: words, reasonNames };
+  const because = reasonNames.map(shorten).join(" and ");
+  const text = `${words} · your taste leans ${because}`;
+  return { badge, text: text.length <= MAX_LABEL_LENGTH ? text : words, reasonNames };
+}
+
 export function buildLiftLabel(
   badge: LiftBadge,
   contributions: { entityId: string; score: number }[] | undefined,

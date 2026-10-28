@@ -5,7 +5,8 @@ import searchFugaziFixture from "../fixtures/search-fugazi.json";
 import searchLisbonFixture from "../fixtures/search-lisbon.json";
 import searchRintaroFixture from "../fixtures/search-rintaro.json";
 import tagsNaturalWineFixture from "../fixtures/tags-natural-wine.json";
-import { extractResultsArray, extractTagsArray, isRecord, mapEntityList, mapScoredEntity, mapTagList } from "./mapping";
+import tagsTasteContextFixture from "../fixtures/tags-taste-context.json";
+import { extractAffinity, extractResultsArray, extractTagsArray, isRecord, mapEntityList, mapScoredEntity, mapTagList } from "./mapping";
 import type {
   InsightsParams,
   InsightsResult,
@@ -14,6 +15,7 @@ import type {
   ScoredEntity,
   SearchParams,
   SearchResult,
+  TagAffinity,
   TagAffinityResult,
   TagSearchResult,
 } from "./types";
@@ -214,20 +216,29 @@ export function createMockQlooClient(): QlooClient {
     return { entities: mapEntityList(values), raw: entitiesFixture };
   }
 
-  /** Labelled fixture tags, so Taste Context renders offline too. */
+  /**
+   * Labelled fixture tags, so Taste Context renders offline too. Its own
+   * fixture rather than the tag-search one: this is a taste *vocabulary*,
+   * spanning domains and carrying affinities, and product scoring (§5.11)
+   * needs words a garment can actually match. The wine-only search fixture
+   * would leave every product grid unscored in mock mode.
+   */
   async function tagAffinities(params: {
     signalEntityIds: string[];
     take?: number;
   }): Promise<TagAffinityResult> {
     await mockDelay();
-    const values = extractTagsArray(tagsNaturalWineFixture) ?? [];
-    const tags = mapTagList(values).map((t, i) => ({
-      id: t.id,
-      name: t.name,
-      // Descending synthetic affinities; mock data carries no real scores.
-      affinity: Math.max(0, 0.99 - i * 0.01),
-    }));
-    return { tags: tags.slice(0, params.take ?? tags.length), durationMs: 0, raw: tagsNaturalWineFixture };
+    const values = extractTagsArray(tagsTasteContextFixture) ?? [];
+    const tags: TagAffinity[] = [];
+    for (const value of values) {
+      if (!isRecord(value)) continue;
+      const id = value["id"];
+      const name = value["name"];
+      if (typeof id !== "string" || typeof name !== "string") continue;
+      const affinity = extractAffinity(value);
+      tags.push({ id, name, ...(affinity !== undefined ? { affinity: affinity.value } : {}) });
+    }
+    return { tags: tags.slice(0, params.take ?? tags.length), durationMs: 0, raw: tagsTasteContextFixture };
   }
 
   return { search, insights, tagAffinities, searchTags, getEntities };

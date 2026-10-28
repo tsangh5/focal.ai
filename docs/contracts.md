@@ -189,3 +189,39 @@ export declare function runRankPipeline(args: RankPipelineArgs): Promise<RankPip
 ```
 
 Web `/api/qloo/rank` and the MCP `score_candidates` tool both call `runRankPipeline`; adapters (search/insights injection, request building, error mapping) live at the edges.
+
+## B-appendix 2. Product scoring (added 2026-10-28)
+
+Product grids have no Qloo entity to resolve to, so they take a separate path (spec §5.11): no `resolveCandidates`, no insights call. The caller supplies the profile's weighted tag vocabulary (one `tagAffinities` call, made and cached in `apps/web`), and `@focal-ai/core` joins it to product descriptors with a hand-written synonym table. Still pure and still Qloo-free.
+
+```ts
+export type StyleFacet = "style" | "palette" | "formality";
+export declare const STYLE_FACETS: readonly StyleFacet[];
+export interface FacetValue { id: string; name: string; synonyms: string[]; keywords: string[]; }
+export declare const FACET_VALUES: Record<StyleFacet, FacetValue[]>;
+export type ProductDescriptor = Partial<Record<StyleFacet, string>>;
+export declare function facetValue(facet: StyleFacet, id: string): FacetValue | undefined;
+export declare function facetCriteria(facet: StyleFacet): Record<string, string>;
+export declare function facetMatchesTag(value: FacetValue, tagName: string): boolean;
+export declare function describeFromName(name: string): ProductDescriptor;
+
+export interface TasteTag { id: string; name: string; affinity?: number; }
+export interface DescribedProduct { clientId: string; name: string; originalIndex: number; descriptor: ProductDescriptor; }
+export interface FacetMatch { facet: StyleFacet; valueId: string; valueName: string; tagId: string; tagName: string; affinity: number; }
+export interface ProductScore { clientId: string; score: number; matches: FacetMatch[]; tagIds: string[]; }
+export declare function scoreProduct(descriptor: ProductDescriptor, tasteTags: TasteTag[]): Omit<ProductScore, "clientId">;
+export declare function scoreProducts(products: DescribedProduct[], tasteTags: TasteTag[]): ProductScore[];
+
+export interface ProductRankArgs { pageId: string; items: DescribedProduct[]; tasteTags: TasteTag[]; profile: ProfileV2; containerId?: string; liftOptions?: LiftOptions; }
+export declare function runProductRank(args: ProductRankArgs): PageRankResult;
+```
+
+Invariants (each enforced by tests):
+
+- Each facet contributes **at most once**, whatever the wording of the matched tag, so a verbose product title cannot inflate a score. `score = Σ affinity` over at most three facets.
+- A tag Qloo returned with no affinity is never matched: an unscored match must not read as a zero-strength one.
+- A product matching nothing scores `0`, not `undefined` — it stays in the page mean, because the gap between matching and non-matching products is the signal.
+- Synonyms match on whole words (with a short suffix allowance, so `minimal` reaches `Minimalism`). `art` must never match `Smart`.
+- The score is meaningless across pages. `runProductRank` always hands it to `decideLift` for within-page z-scoring and never compares it to a Qloo affinity.
+- Matched facets carry the real Qloo tag URN, so hard rules and disliked vibes apply through the existing tag machinery with no product-specific code.
+- When no product on the page matches anything, the result is `nothing_scored` with a `null` plan — never `ranked` with an empty one.

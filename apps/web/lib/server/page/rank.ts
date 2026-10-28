@@ -1,18 +1,25 @@
 import {
+  favouriteThings,
   runPageRank as runCorePageRank,
+  runProductRank,
+  type DescribedProduct,
   type PageInsightsFn,
   type PageItem,
   type PageRankResult,
   type ProfileV2,
+  type TasteTag,
 } from "@focal-ai/core";
 import type { QlooEntityType } from "@focal-ai/qloo";
 import { toCandidateScores, toCoreSearchFn } from "../adapters";
 import { buildInsightsParams } from "../pipeline";
 import { getQlooClient } from "../qloo";
-import { toInsightType, type PageRankBody } from "./schemas";
 import { cachedResolutionResolver, getResolutionStore } from "../resolution/cache";
+import { getDescriber } from "./identify";
+import { isEntityShortType, toInsightType, type PageRankBody } from "./schemas";
 
 const RESOLVE_SEARCH_TAKE = 3;
+/** Taste vocabulary breadth for product scoring; matches /api/taste-context. */
+const TASTE_TAG_TAKE = 18;
 
 function pageInsights(): PageInsightsFn {
   const client = getQlooClient();
@@ -43,8 +50,43 @@ function mostCommonCity(body: PageRankBody): string | undefined {
   return [...counts].sort((a, b) => b[1] - a[1])[0]?.[0];
 }
 
+/**
+ * Product grids (§5.11). Two reads, neither of them an insights call: the
+ * profile's taste vocabulary from Qloo, and the style facets of each product
+ * name. The Qloo client caches `/v2/insights` responses for 10 minutes and the
+ * signal set is the whole profile, so the tag call is made once per profile
+ * and reused across every product page the user opens in that window.
+ */
+async function rankProductPage(body: PageRankBody, profile: ProfileV2, pageId: string): Promise<PageRankResult> {
+  const signalIds = favouriteThings(profile).map((t) => t.qlooId);
+
+  let tasteTags: TasteTag[] = [];
+  if (signalIds.length > 0) {
+    const res = await getQlooClient().tagAffinities({ signalEntityIds: signalIds, take: TASTE_TAG_TAKE });
+    tasteTags = res.tags.map((t) => ({
+      id: t.id,
+      name: t.name,
+      ...(t.affinity !== undefined ? { affinity: t.affinity } : {}),
+    }));
+  }
+
+  const descriptors = await getDescriber().describe(body.items.map((i) => i.name));
+  const items: DescribedProduct[] = body.items.map((item, i) => ({
+    clientId: item.clientId,
+    name: item.name,
+    originalIndex: pagePosition(item.clientId) ?? i,
+    descriptor: descriptors[i] ?? {},
+  }));
+
+  return runProductRank({ pageId, items, tasteTags, profile });
+}
+
 /** Server side of the extension's rank request: one insights call, lift-only plan. */
 export async function rankPage(body: PageRankBody, profile: ProfileV2, pageId: string, opts: { callerKey: string }): Promise<PageRankResult & { resolutionLimited: boolean }> {
+  // Product grids never resolve a name, so the resolution cache cannot limit them.
+  if (!isEntityShortType(body.pageType)) {
+    return { ...(await rankProductPage(body, profile, pageId)), resolutionLimited: false };
+  }
   const pageType = toInsightType(body.pageType);
   const items: PageItem[] = body.items.map((item, i) => {
     const located = item.type === "place" || item.type === "destination";
@@ -52,7 +94,7 @@ export async function rankPage(body: PageRankBody, profile: ProfileV2, pageId: s
       clientId: item.clientId,
       name: item.name,
       originalIndex: pagePosition(item.clientId) ?? i,
-      type: toInsightType(item.type),
+      type: isEntityShortType(item.type) ? toInsightType(item.type) : "product",
       ...(item.city && located ? { city: item.city } : {}),
     };
   });

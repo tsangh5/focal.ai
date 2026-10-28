@@ -1,0 +1,16 @@
+{
+  "_fixture": "mock — hand-authored from public docs examples, not live Qloo data",
+  "success": true,
+  "results": {
+    "tags": [
+      { "id": "urn:tag:genre:music:punk", "name": "Punk", "subtype": "urn:tag_type:genre", "query": { "affinity": 0.93 } },
+      { "id": "urn:tag:keyword:minimalism", "name": "Minimalism", "subtype": "urn:tag_type:keyword", "query": { "affinity": 0.87 } },
+      { "id": "urn:tag:cuisine:natural_wine", "name": "Natural Wine", "subtype": "urn:tag_type:cuisine", "query": { "affinity": 0.78 } },
+      { "id": "urn:tag:keyword:casual", "name": "Casual", "subtype": "urn:tag_type:keyword", "query": { "affinity": 0.66 } },
+      { "id": "urn:tag:genre:music:post_punk", "name": "Post-Punk", "subtype": "urn:tag_type:genre", "query": { "affinity": 0.61 } },
+      { "id": "urn:tag:keyword:heritage", "name": "Heritage", "subtype": "urn:tag_type:keyword", "query": { "affinity": 0.44 } },
+      { "id": "urn:tag:genre:media:science_fiction", "name": "Science Fiction", "subtype": "urn:tag_type:genre", "query": { "affinity": 0.31 } },
+      { "id": "urn:tag:genre:music:classical", "name": "Classical", "subtype": "urn:tag_type:genre", "query": { "affinity": 0.14 } }
+    ]
+  }
+}

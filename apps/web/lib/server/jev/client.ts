@@ -1,4 +1,5 @@
-import type { CardAnswer, Identifier, PageAnswer } from "../page/identify";
+import { facetCriteria, facetValue, STYLE_FACETS, type ProductDescriptor } from "@focal-ai/core";
+import type { CardAnswer, Identifier, PageAnswer, ProductDescriber } from "../page/identify";
 import type { IdentifyBody, ShortType } from "../page/schemas";
 
 /**
@@ -24,9 +25,16 @@ const TYPE_CHOICES: Record<string, { type: ShortType | null; description: string
   video_game: { type: "videogame", description: "A video game" },
   brand: { type: "brand", description: "A company or brand, including fashion, beauty and product brands" },
   person: { type: "person", description: "A public figure such as an actor, author or athlete" },
+  // Products used to fall under not_a_thing, which put every product grid
+  // below the is_list cut-off (§5.11). They are now their own type and take
+  // the facet scoring path rather than being resolved as entities.
+  product: {
+    type: "product",
+    description: "A specific item for sale: a garment, shoe, accessory or piece of homeware",
+  },
   not_a_thing: {
     type: null,
-    description: "Not a named real-world thing: an email, article headline, product variant, ad copy or interface text",
+    description: "Not a named real-world thing: an email, article headline, ad copy or interface text",
   },
 };
 
@@ -54,7 +62,7 @@ export function buildJevRequest(body: IdentifyBody, model: string): Record<strin
     is_list: {
       type: "noul",
       instructions:
-        "Is this page section a list of named real-world things (venues, films, shows, artists, books, podcasts, games, brands, destinations or public figures)?",
+        "Is this page section a list of named real-world things (venues, films, shows, artists, books, podcasts, games, brands, destinations, public figures or products for sale)?",
       criteria: null,
     },
   };
@@ -62,7 +70,7 @@ export function buildJevRequest(body: IdentifyBody, model: string): Record<strin
     const snippets = Object.fromEntries(card.snippets.map((text, i) => [`s${i}`, text]));
     questions[`c${index}_name`] = {
       type: "choice",
-      instructions: `Which snippet of card c${index} is the name of the thing the card is about? For a product card, choose the brand.`,
+      instructions: `Which snippet of card c${index} is the name of the thing the card is about? For a product card, choose the product name — not the price, the colour count or the brand.`,
       criteria: { ...snippets, none: "None of these snippets names a real-world thing" },
     };
     questions[`c${index}_type`] = {
@@ -117,27 +125,89 @@ export function parseJevAnswers(body: IdentifyBody, payload: unknown): PageAnswe
   return { isList, cards };
 }
 
-export function createJevIdentifier(opts: JevOptions): Identifier {
+/**
+ * Facet questions for a set of product names (§5.11). Sent at rank time, not
+ * identify time, because the facets are read off the product name alone — the
+ * page snippets are not needed a second time, so this request carries only the
+ * names already sent to Qloo.
+ *
+ * One single-choice question per facet per product. The criteria come from the
+ * shared vocabulary in @focal-ai/core, so the wire format and the scorer can
+ * never drift apart.
+ */
+export function buildDescribeRequest(names: string[], model: string): Record<string, unknown> {
+  const questions: Record<string, unknown> = {};
+  names.forEach((name, index) => {
+    for (const facet of STYLE_FACETS) {
+      questions[`p${index}_${facet}`] = {
+        type: "choice",
+        instructions: `For the product "${name}", which ${facet} does it belong to?`,
+        criteria: facetCriteria(facet),
+      };
+    }
+  });
+  return {
+    model,
+    state: { products: names.map((name, index) => ({ id: `p${index}`, name })) },
+    questions,
+  };
+}
+
+/** Facet answers below this keep the facet unset rather than guessing. */
+export const FACET_CONFIDENCE_THRESHOLD = 0.6;
+
+export function parseDescribeAnswers(names: string[], payload: unknown): ProductDescriptor[] {
+  const answers = rec(rec(payload)?.answers) ?? {};
+  return names.map((_, index) => {
+    const descriptor: ProductDescriptor = {};
+    for (const facet of STYLE_FACETS) {
+      const answer = (rec(answers[`p${index}_${facet}`]) ?? {}) as Choice;
+      const choice = typeof answer.choice === "string" ? answer.choice : "";
+      if (!choice || choice === "unknown") continue;
+      if (num(answer.confidence) < FACET_CONFIDENCE_THRESHOLD) continue;
+      if (facetValue(facet, choice)) descriptor[facet] = choice;
+    }
+    return descriptor;
+  });
+}
+
+function jevFetch(opts: JevOptions, body: Record<string, unknown>): Promise<unknown> {
   const baseUrl = (opts.baseUrl ?? JEV_DEFAULT_BASE_URL).replace(/\/+$/, "");
-  const model = opts.model ?? JEV_DEFAULT_MODEL;
   const doFetch = opts.fetchImpl ?? fetch;
+  return (async () => {
+    let res: Response;
+    try {
+      res = await doFetch(`${baseUrl}/v1/systemone`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${opts.apiKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(opts.timeoutMs ?? 8000),
+      });
+    } catch (e) {
+      throw new JevError(e instanceof Error && e.name === "TimeoutError" ? "Jev timed out" : "Jev request failed");
+    }
+    if (!res.ok) throw new JevError(`Jev returned HTTP ${res.status}`, res.status);
+    const payload: unknown = await res.json().catch(() => undefined);
+    if (!rec(payload)?.answers) throw new JevError("Jev response had no answers");
+    return payload;
+  })();
+}
+
+export function createJevIdentifier(opts: JevOptions): Identifier {
+  const model = opts.model ?? JEV_DEFAULT_MODEL;
   return {
     async identify(body) {
-      let res: Response;
-      try {
-        res = await doFetch(`${baseUrl}/v1/systemone`, {
-          method: "POST",
-          headers: { Authorization: `Bearer ${opts.apiKey}`, "Content-Type": "application/json" },
-          body: JSON.stringify(buildJevRequest(body, model)),
-          signal: AbortSignal.timeout(opts.timeoutMs ?? 8000),
-        });
-      } catch (e) {
-        throw new JevError(e instanceof Error && e.name === "TimeoutError" ? "Jev timed out" : "Jev request failed");
-      }
-      if (!res.ok) throw new JevError(`Jev returned HTTP ${res.status}`, res.status);
-      const payload: unknown = await res.json().catch(() => undefined);
-      if (!rec(payload)?.answers) throw new JevError("Jev response had no answers");
-      return parseJevAnswers(body, payload);
+      return parseJevAnswers(body, await jevFetch(opts, buildJevRequest(body, model)));
+    },
+  };
+}
+
+export function createJevDescriber(opts: JevOptions): ProductDescriber {
+  const model = opts.model ?? JEV_DEFAULT_MODEL;
+  return {
+    async describe(names) {
+      if (names.length === 0) return [];
+      return parseDescribeAnswers(names, await jevFetch(opts, buildDescribeRequest(names, model)));
     },
   };
 }

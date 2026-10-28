@@ -17,6 +17,11 @@ export interface WhyItem {
   label?: LiftLabel;
   boosts: string[];
   foldedBy: string[];
+  /**
+   * For products, the facets the score was summed from (§5.11). A product has
+   * no entity to credit, so this is the whole explanation of its number.
+   */
+  facets: { tagId: string; tagName: string; valueName: string; affinity: number }[];
 }
 
 export interface WhyView {
@@ -25,6 +30,8 @@ export interface WhyView {
   status: string;
   createdAt: string;
   expiresAt: string;
+  /** Page type as ranked; `product` pages are explained by facet, not entity. */
+  pageType?: string;
   items: WhyItem[];
   signals: SignalSelection;
   stats: { scored: number; mean?: number; sd?: number };
@@ -38,6 +45,7 @@ type Meta = Partial<{
   stats: WhyView["stats"];
   resolved: number;
   unresolved: number;
+  pageType: string;
   qlooRequest: WhyView["qlooRequest"];
   durationMs: number;
 }>;
@@ -94,6 +102,7 @@ export function buildWhyView(row: StoredPageResult): WhyView {
       ...(item.label ? { label: item.label } : {}),
       boosts: item.boosts ?? [],
       foldedBy: item.foldedBy ?? [],
+      facets: item.facets ?? [],
     };
   });
   const count = (outcome: PageResultItem["outcome"]) => items.filter((i) => i.outcome === outcome).length;
@@ -104,6 +113,7 @@ export function buildWhyView(row: StoredPageResult): WhyView {
     status: row.status,
     createdAt: row.createdAt,
     expiresAt: row.expiresAt,
+    ...(typeof meta.pageType === "string" ? { pageType: meta.pageType } : {}),
     items: view,
     signals: {
       entities: Array.isArray(signals.entities) ? (signals.entities as SignalSelection["entities"]) : [],

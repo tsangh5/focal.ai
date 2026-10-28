@@ -53,6 +53,9 @@ function Stat({ label, value }: { label: string; value: string | number }) {
 
 export function WhyView({ view }: { view: View }) {
   const likes = [...view.signals.entities, ...view.signals.tags, ...view.signals.localBoosts];
+  // Products are scored from style facets rather than resolved entities (§5.11),
+  // so "not recognised by Qloo" would be the wrong thing to say about them.
+  const isProduct = view.pageType === "product";
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-2">
@@ -118,7 +121,19 @@ export function WhyView({ view }: { view: View }) {
                     ) : null}
                     {item.disambiguation ? <div className="text-xs text-muted">{item.disambiguation}</div> : null}
                     {item.status !== "resolved" && item.status !== "skipped" ? (
-                      <div className="text-xs text-muted">{item.status === "ambiguous" ? "Ambiguous match" : "Not recognised by Qloo"}</div>
+                      <div className="text-xs text-muted">
+                        {isProduct
+                          ? "No facet matched your taste"
+                          : item.status === "ambiguous"
+                            ? "Ambiguous match"
+                            : "Not recognised by Qloo"}
+                      </div>
+                    ) : null}
+                    {/* A product's score has no entity behind it, so the facet sum is the explanation. */}
+                    {item.facets.length > 0 ? (
+                      <div className="mt-1 text-xs text-muted">
+                        {item.facets.map((f) => `${f.valueName} (${f.tagName} ${f.affinity.toFixed(2)})`).join(" + ")}
+                      </div>
                     ) : null}
                     {item.label ? <div className="mt-1 text-xs text-ink/90">{item.label.text}</div> : null}
                     {item.foldedBy.length > 0 ? (

@@ -179,6 +179,28 @@ Automatic detection on any site, no per-site adapters: find the dominant group o
 
 Read and write with the same rules as the chat: read profile, search entities and tags, add and remove things and vibes with strength, propose rules (pending until approved on the website), recommendations, taste summary, rank a list. When a name is ambiguous the tool refuses to save and returns the choices for the assistant to ask the user. Settings and sites to skip are website-only. Every write appears in the activity feed as "via <assistant>" with undo.
 
+### 5.11 Product grids
+
+Qloo has no `urn:entity:product`, so a product grid cannot be resolved and scored like a restaurant list. Until this section, product cards fell under Jev's `not_a_thing` choice and the page-level "is a list" answer measured 0.45 against a 0.5 cut-off (§8 results, 2026-10-20) — focal looked at a Uniqlo grid and did nothing, silently. Ranking brands instead does not help: a single-brand store resolves every card to the same entity, so every affinity is identical and the lift step's standard-deviation guard correctly declines to rank.
+
+Products are therefore their own page type, scored on **facets** rather than entities.
+
+- **Descriptor.** Every product is described on three axes: `style` (minimal, classic, tailored, workwear, preppy, street, athletic, outdoor, romantic, utility), `palette` (neutral, monochrome, earthy, bright, pastel, dark) and `formality` (loungewear, casual, smart casual, formal). Any axis may be unknown; an unknown axis contributes nothing rather than a guess.
+- **Where the descriptor comes from.** Jev, at rank time, from the product name alone — apparel titles are unusually descriptive ("Pleated Wide Leg Pants"). It is a second call rather than part of identify so that the request carries only the names already going to Qloo, and so the answers stay profile-free and cacheable per page. With no key configured a keyword describer in `@focal-ai/core` reads the same facets off the title, so mock mode still ranks.
+- **Where taste comes from.** One `tagAffinities` call per profile returns Qloo's own weighted tag vocabulary for the user's whole cross-domain taste set ("Punk 0.93, Minimalism 0.87"). The Qloo client caches it for 10 minutes, so it is one call per profile, not per page.
+- **The join** between a cultural tag vocabulary and a garment is a hand-written synonym table in `packages/core/src/style.ts`. Deliberately not a model's per-page judgement: it is reviewable, unit-tested, free at request time, and it keeps the user's taste out of the identification call (§6).
+- **Score.** Each facet matches at most one taste tag — the strongest whose name means the same thing — and contributes that tag's affinity:
+
+  ```
+  score(product) = Σ affinity(best matching taste tag) over its three facets
+  ```
+
+  Bounded by three times the strongest affinity. Rewards a product that lines up on more than one axis, and cannot be inflated by a wordy title, because each facet contributes exactly once however many synonyms the tag name hits. A product matching nothing scores 0 rather than going unscored, so it still counts toward the page mean: on a grid where some products match and others do not, that difference is the whole signal.
+- **Then nothing is special.** The score is never compared across pages; `decideLift` z-scores it within the grid exactly as it does a Qloo affinity, and lift, folds, labels and the plan are the same code every other list uses. When no product matches anything the page is reported `nothing_scored` and left alone, rather than ranked with an empty plan.
+- **Rules and dislikes come free.** A matched facet carries the real Qloo tag URN, so a hard rule folds products and a disliked vibe suppresses them through the existing tag machinery, with no product-specific code.
+- **Labels** name the facet, not an entity: "Top pick for you · your taste leans minimal and casual". "Leans" because the facet is Qloo's reading of the taste set, not a phrase the user used.
+- **Feedback** on a lifted product saves the strongest facet as a vibe on its Qloo tag — the product itself has no entity to save, and the facet is what the label named, so it is what the user is reacting to.
+
 ## 6. Privacy and security
 
 - **What leaves the browser:** on a new site layout, the text snippets of list cards (never full pages, form fields or screenshots) go to the focal server and to TypeSafe (Jev). On known layouts, only item names, type and city go to the focal server. Item names go to Qloo.
@@ -212,6 +234,9 @@ Speed targets: first visit to a page about 2–3 s (Qloo pacing), repeat pages 0
 | Do the free LLM tiers support tool calling, with which models? | Whether the chat can run free | `pnpm probe:unknowns llm` lists models and sends a tool-calling request to each configured provider |
 | Which sign-in service can also be the OAuth server for MCP connectors? | ChatGPT and claude.ai connections | Desk research: MCP requires OAuth 2.1 with resource indicators and client registration (Client ID Metadata Documents or dynamic registration). Candidates to check: WorkOS AuthKit, Clerk, Stytch, Descope, Better Auth, Supabase Auth, Cloudflare's workers-oauth-provider |
 | How reliable is automatic list detection on real sites? | Core promise | Prototype the extractor and run it on saved pages from 10 target sites (restaurants, hotels, films, music, books, games, fashion) |
+| Does `is_list` clear 0.5 on a product grid now that `product` is a type choice? | All of §5.11 depends on it; it measured 0.45 when products were `not_a_thing` | `pnpm probe:unknowns jev` on a saved Uniqlo and a saved multi-brand grid, reading the page-level score before and after the vocabulary change |
+| How accurately does Jev read style, palette and formality from a product name alone? | Whether the facet confidence floor of 0.6 is right, and whether palette is answerable at all from titles that rarely name a colour | Same probe: hand-label the facets for ~40 real product titles and report accuracy per facet by confidence |
+| Do real taste vocabularies overlap the style synonym table? | A profile whose Qloo tags never match a facet scores nothing and the grid is left alone | Run `tagAffinities` for several seeded profiles and count how many of the 20 facet values any returned tag reaches |
 
 ### Results (2026-10-20, live keys)
 
@@ -220,7 +245,7 @@ Speed targets: first visit to a page about 2–3 s (Qloo pacing), repeat pages 0
 - **Signal cap:** going from 20 to 35 to 50 entity signals moves scores by only about 0.002–0.003 each step. The extra signals are used but barely matter, so the cap stays at 20 (latency 0.64 s → 1.29 s).
 - **Jev** (`jev-latest`):
   - Speed and cost: 60–90 ms per page, about 540 input tokens per card, so a 30-card page is about 16k tokens or $0.0007.
-  - Page-level "is a list": 0.97 / 0.98 on real lists, 0.05 / 0.06 on inbox and news, 0.45 on a product grid (brand ≠ product name).
+  - Page-level "is a list": 0.97 / 0.98 on real lists, 0.05 / 0.06 on inbox and news, 0.45 on a product grid (brand ≠ product name). The product-grid result is what §5.11 was written to fix; it predates `product` being a type choice and needs re-measuring (§8).
   - Per-answer accuracy: 96% at confidence ≥ 0.8 and 100% at ≥ 0.9. The threshold stays 0.8; the page-level cut-off is 0.5.
 - **Live end-to-end** (Jev identify, then one live insights call): a 9-card SF page identified in 148 ms and ranked in 1.6 s. One item was lifted, labelled "Top pick for you · because you like Rintaro and Fugazi". Places the user already likes come back unscored because Qloo leaves signal entities out of results; whether to lift them anyway is an open product call.
 - **Free LLM (Groq):** `openai/gpt-oss-120b` is listed and returns a correct tool call (`search_entities({"query":"Fugazi","type":"artist"})`) in 404 ms. Free-tier limits seen: 1,000 requests and 8,000 tokens per minute. The token limit is tight, so chat context must stay compact (`summarizeProfile`). Cerebras and OpenRouter are untested (no keys).

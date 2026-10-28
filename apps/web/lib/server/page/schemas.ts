@@ -1,13 +1,29 @@
 import type { InsightType } from "@focal-ai/core";
 import { z } from "zod";
 
-/** Short type names used on the wire by the extension (apps/extension/src/api.ts). */
-export const SHORT_TYPES = [
+/** Types that are Qloo entities, so they can be resolved and scored by insights. */
+export const ENTITY_SHORT_TYPES = [
   "place", "destination", "movie", "tv_show", "book", "artist", "brand", "podcast", "videogame", "person",
 ] as const;
+export type EntityShortType = (typeof ENTITY_SHORT_TYPES)[number];
+
+/**
+ * `product` is deliberately not a Qloo entity type (§5.11): there is no
+ * `urn:entity:product` to resolve against, so product pages take the facet
+ * scoring path instead of resolve + insights. It is kept out of
+ * `ENTITY_SHORT_TYPES` so `toInsightType` cannot be handed one by mistake.
+ */
+export const PRODUCT_SHORT_TYPE = "product";
+
+/** Short type names used on the wire by the extension (apps/extension/src/api.ts). */
+export const SHORT_TYPES = [...ENTITY_SHORT_TYPES, PRODUCT_SHORT_TYPE] as const;
 export type ShortType = (typeof SHORT_TYPES)[number];
 
-export function toInsightType(t: ShortType): InsightType {
+export function isEntityShortType(t: ShortType): t is EntityShortType {
+  return t !== PRODUCT_SHORT_TYPE;
+}
+
+export function toInsightType(t: EntityShortType): InsightType {
   return `urn:entity:${t}` as InsightType;
 }
 
