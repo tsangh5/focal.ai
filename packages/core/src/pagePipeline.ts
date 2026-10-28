@@ -16,7 +16,7 @@ import { validatePlan } from "./plan";
 import { resolveCandidates } from "./resolve";
 import { selectSignals, type Signal, type SignalConfig, type SignalSelection } from "./signals";
 import type { InsightType, ProfileV2 } from "./taste";
-import type { CandidateScore, CoreSearchFn, RenderOp, RenderPlan, ResolutionStatus } from "./types";
+import type { CandidateScore, CoreResolveFn, CoreSearchFn, RenderOp, RenderPlan, ResolutionStatus } from "./types";
 
 const MIN_TAKE = 20;
 const MAX_TAKE = 50;
@@ -50,7 +50,7 @@ export interface PageRankArgs {
   pageType: InsightType;
   items: PageItem[];
   profile: ProfileV2;
-  deps: { search: CoreSearchFn; insights: PageInsightsFn };
+  deps: { search: CoreSearchFn; insights: PageInsightsFn; resolve?: CoreResolveFn };
   locationQuery?: string;
   /** default "focal:results" */
   containerId?: string;
@@ -188,7 +188,7 @@ export async function runPageRank(args: PageRankArgs): Promise<PageRankResult> {
     };
   }
 
-  const resolved = await resolveCandidates(
+  const resolved = await (deps.resolve ?? resolveCandidates)(
     eligible.map((i) => ({
       clientId: i.clientId,
       name: i.name,
