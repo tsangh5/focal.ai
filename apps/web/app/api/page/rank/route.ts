@@ -30,7 +30,7 @@ export async function POST(req: Request): Promise<Response> {
 
   const pageResultId = crypto.randomUUID();
   try {
-    const result = await rankPage(parsed.data, session.profile, pageResultId);
+    const result = await rankPage(parsed.data, session.profile, pageResultId, { callerKey: session.userId });
     await getPageResultStore().save({
       id: pageResultId,
       userId: session.userId,
@@ -40,7 +40,7 @@ export async function POST(req: Request): Promise<Response> {
       plan: result.plan,
       meta: { ...result.meta, pageType: parsed.data.pageType, signals: result.signals, stats: result.stats, durationMs: Date.now() - startedAt },
     });
-    return Response.json({ pageResultId, status: result.status, plan: result.plan });
+    return Response.json({ pageResultId, status: result.status, plan: result.plan, resolutionLimited: result.resolutionLimited, resolvedCount: result.meta.resolved });
   } catch (e) {
     if (e instanceof PagePipelineError) {
       return Response.json({ error: { code: e.code, message: "could not build a valid plan" } }, { status: 500 });

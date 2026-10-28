@@ -70,6 +70,15 @@ export interface CandidateScore {
   tagNames?: string[];
 }
 
+/** Injected resolution seam — the web layer wraps this with the shared
+ *  resolution cache; core's default is plain resolveCandidates. */
+export type CoreResolveFn = (
+  candidates: PageCandidate[],
+  search: CoreSearchFn,
+  expectedType: string,
+  defaults?: { location?: string },
+) => Promise<ResolvedCandidate[]>;
+
 export interface RankedCandidate extends ResolvedCandidate {
   position: number;
   affinity?: number;

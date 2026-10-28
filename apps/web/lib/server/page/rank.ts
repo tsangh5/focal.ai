@@ -10,6 +10,7 @@ import { toCandidateScores, toCoreSearchFn } from "../adapters";
 import { buildInsightsParams } from "../pipeline";
 import { getQlooClient } from "../qloo";
 import { toInsightType, type PageRankBody } from "./schemas";
+import { cachedResolutionResolver, getResolutionStore } from "../resolution/cache";
 
 const RESOLVE_SEARCH_TAKE = 3;
 
@@ -43,7 +44,7 @@ function mostCommonCity(body: PageRankBody): string | undefined {
 }
 
 /** Server side of the extension's rank request: one insights call, lift-only plan. */
-export async function rankPage(body: PageRankBody, profile: ProfileV2, pageId: string): Promise<PageRankResult> {
+export async function rankPage(body: PageRankBody, profile: ProfileV2, pageId: string, opts: { callerKey: string }): Promise<PageRankResult & { resolutionLimited: boolean }> {
   const pageType = toInsightType(body.pageType);
   const items: PageItem[] = body.items.map((item, i) => {
     const located = item.type === "place" || item.type === "destination";
@@ -56,12 +57,19 @@ export async function rankPage(body: PageRankBody, profile: ProfileV2, pageId: s
     };
   });
   const locationQuery = body.pageType === "place" || body.pageType === "destination" ? mostCommonCity(body) : undefined;
-  return runCorePageRank({
+  // Per-request flag — set by the cached resolver's onLimited, never module state.
+  let resolutionLimited = false;
+  const result = await runCorePageRank({
     pageId,
     pageType,
     items,
     profile,
     ...(locationQuery ? { locationQuery } : {}),
-    deps: { search: toCoreSearchFn(getQlooClient(), RESOLVE_SEARCH_TAKE), insights: pageInsights() },
+    deps: {
+      search: toCoreSearchFn(getQlooClient(), RESOLVE_SEARCH_TAKE),
+      insights: pageInsights(),
+      resolve: cachedResolutionResolver(getResolutionStore(), opts.callerKey, () => { resolutionLimited = true; }),
+    },
   });
+  return { ...result, resolutionLimited };
 }

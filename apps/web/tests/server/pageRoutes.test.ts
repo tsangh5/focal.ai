@@ -111,6 +111,8 @@ describe("POST /api/page/rank → GET /api/page/result/:id", () => {
     const body = await res.json();
     expect(body.status).toBe("ranked");
     expect(typeof body.pageResultId).toBe("string");
+    expect(body.resolutionLimited).toBe(false); // request-scoped flag, always present
+    expect(body.resolvedCount).toBeGreaterThan(0); // Rintaro & co. resolve under mock Qloo
     const reorder = body.plan.ops.find((o: { op: string }) => o.op === "reorder");
     expect(reorder.order[0]).toBe("c0");
     // c0 is Rintaro, which the dev profile already likes, so it is labelled as

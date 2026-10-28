@@ -23,6 +23,7 @@ export function mcpDeps(db: Db, userId: string, client: string): HostedDeps {
         },
         profile,
         crypto.randomUUID(),
+        { callerKey: `mcp:${userId}` },
       );
       const byId = new Map(result.items.map((it) => [it.clientId, it]));
       const reorder = result.plan?.ops.find((op) => op.op === "reorder");
