@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Image from "next/image";
 import { AnimatePresence, motion } from "motion/react";
-import { ChevronLeft, ChevronRight, ImageOff } from "lucide-react";
+import { ChevronLeft, ChevronRight, ImageOff, SlidersHorizontal } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 interface DiscoverItem {
   entityId: string;
   name: string;
+  type: string;
   affinity?: number;
   disambiguation?: string;
   imageUrl?: string;
@@ -38,7 +39,11 @@ const TABS = [
   { type: "person", label: "People" },
 ] as const;
 
+const TYPE_LABEL: Record<string, string> = Object.fromEntries(TABS.map((t) => [t.type, t.label]));
+
 type TabType = (typeof TABS)[number]["type"];
+/** "all" is the default feed: every category, interleaved. */
+type FeedType = TabType | "all";
 
 /** Two at a time; the rest are reachable with the arrows. */
 const PER_PAGE = 2;
@@ -80,6 +85,10 @@ function Card({ item }: { item: DiscoverItem }) {
             <ImageOff className="size-5" />
           </div>
         )}
+        {/* The feed mixes categories, so each card has to say what it is. */}
+        <span className="absolute left-2 top-2 rounded-full bg-canvas/85 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted backdrop-blur-sm">
+          {TYPE_LABEL[item.type] ?? item.type}
+        </span>
       </div>
       <div className="flex flex-col gap-0.5 px-3 py-2">
         <div className="flex items-baseline justify-between gap-2">
@@ -100,10 +109,11 @@ function Card({ item }: { item: DiscoverItem }) {
 }
 
 /**
- * One tab's results. Mounted with `key={type}` so switching tabs remounts
- * instead of resetting state inside an effect.
+ * One feed's results — a single category, or all ten mixed. Mounted with
+ * `key={type}` so changing the filter remounts instead of resetting state
+ * inside an effect.
  */
-function TrendingPanel({ type, city }: { type: TabType; city?: string }) {
+function TrendingPanel({ type, city }: { type: FeedType; city?: string }) {
   const [data, setData] = useState<DiscoverResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(0);
@@ -115,8 +125,9 @@ function TrendingPanel({ type, city }: { type: TabType; city?: string }) {
   useEffect(() => {
     let cancelled = false;
     const params = new URLSearchParams({ type });
-    // Only place-like types take a location filter.
-    if (city && type === "place") params.set("city", city);
+    // Send the city for the mixed feed too — the server applies it only to the
+    // place-like types, so films and books are unaffected.
+    if (city && (type === "all" || type === "place" || type === "destination")) params.set("city", city);
     fetch(`/api/discover?${params}`, { cache: "no-store" })
       .then(async (res) => {
         if (!res.ok) throw new Error("Could not load recommendations.");
@@ -219,16 +230,51 @@ function TrendingPanel({ type, city }: { type: TabType; city?: string }) {
 }
 
 export function TrendingForYou({ city }: { city?: string }) {
-  const [type, setType] = useState<TabType>("place");
+  // Everything, mixed, by default. The filter is opt-in: ten category tabs
+  // sitting above the feed imply you have to pick one before anything happens.
+  const [type, setType] = useState<FeedType>("all");
+  const [filtering, setFiltering] = useState(false);
+
+  function closeFilter() {
+    setFiltering(false);
+    setType("all");
+  }
 
   return (
     <section className="flex flex-col gap-3">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <div>
           <h2 className="text-sm font-semibold text-ink">Trending for you</h2>
-          <p className="text-xs text-muted">What is popular now, filtered through your taste.</p>
+          <p className="text-xs text-muted">
+            {type === "all"
+              ? "What is popular now across everything you like."
+              : `What is popular now in ${TYPE_LABEL[type]?.toLowerCase() ?? type}.`}
+          </p>
         </div>
-        <div className="flex items-center gap-0.5 rounded-md bg-surface-2/60 p-0.5">
+        <Button
+          size="sm"
+          variant={filtering ? "secondary" : "ghost"}
+          aria-expanded={filtering}
+          onClick={() => (filtering ? closeFilter() : setFiltering(true))}
+        >
+          <SlidersHorizontal className="size-3.5" />
+          {type === "all" ? "Filter" : TYPE_LABEL[type]}
+        </Button>
+      </div>
+
+      {filtering ? (
+        <div className="flex flex-wrap items-center gap-1" role="group" aria-label="Category">
+          <button
+            type="button"
+            aria-pressed={type === "all"}
+            onClick={() => setType("all")}
+            className={cn(
+              "rounded-full border px-2.5 py-0.5 text-[11px] font-medium transition-colors",
+              type === "all" ? "border-accent bg-accent/10 text-accent" : "border-line text-muted hover:text-ink",
+            )}
+          >
+            Everything
+          </button>
           {TABS.map((t) => (
             <button
               key={t.type}
@@ -236,15 +282,16 @@ export function TrendingForYou({ city }: { city?: string }) {
               aria-pressed={type === t.type}
               onClick={() => setType(t.type)}
               className={cn(
-                "rounded px-2 py-0.5 text-[11px] font-medium transition-colors",
-                type === t.type ? "bg-surface text-ink" : "text-muted hover:text-ink",
+                "rounded-full border px-2.5 py-0.5 text-[11px] font-medium transition-colors",
+                type === t.type ? "border-accent bg-accent/10 text-accent" : "border-line text-muted hover:text-ink",
               )}
             >
               {t.label}
             </button>
           ))}
         </div>
-      </div>
+      ) : null}
+
       <TrendingPanel key={type} type={type} city={city} />
     </section>
   );
