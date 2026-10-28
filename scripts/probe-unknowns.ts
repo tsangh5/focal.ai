@@ -19,6 +19,15 @@
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+// Relative, not `@focal-ai/core`: the probe takes no workspace dependency, and
+// style.ts imports nothing, so tsx compiles it as plain source.
+import {
+  FACET_VALUES,
+  STYLE_FACETS,
+  facetCriteria,
+  facetMatchesTag,
+  type ProductDescriptor,
+} from "../packages/core/src/style";
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(scriptDir, "..");
@@ -214,6 +223,30 @@ async function insights(apiKey: string, baseUrl: string, params: Record<string, 
   };
 }
 
+/** Taste Context: `filter.type=urn:tag` puts the vocabulary under `results.tags`. */
+async function tagAffinities(
+  apiKey: string,
+  baseUrl: string,
+  signalEntityIds: string[],
+): Promise<{ tags: { id: string; name: string; affinity?: number }[]; error?: string }> {
+  const reply = await qloo(apiKey, baseUrl, "/v2/insights", {
+    "filter.type": "urn:tag",
+    "signal.interests.entities": signalEntityIds.join(","),
+    take: "18",
+  });
+  if (reply.status >= 400) return { tags: [], error: errorText(reply.body) };
+  const values = asArray(asRecord(asRecord(reply.body)?.results)?.tags).map(asRecord);
+  const tags: { id: string; name: string; affinity?: number }[] = [];
+  for (const value of values) {
+    if (value === undefined) continue;
+    const id = typeof value.id === "string" ? value.id : value.tag_id;
+    if (typeof id !== "string" || typeof value.name !== "string") continue;
+    const affinity = asNumber(asRecord(value.query)?.affinity);
+    tags.push({ id, name: value.name, ...(affinity !== undefined ? { affinity } : {}) });
+  }
+  return { tags };
+}
+
 function compare(base: Scores, variant: Scores): { maxDelta: number; meanDelta: number; orderChanged: boolean } {
   const deltas: number[] = [];
   for (const [id, value] of base.affinity) {
@@ -400,6 +433,37 @@ async function runQloo(): Promise<boolean> {
     log("- skipped: not enough targets or signal ids");
   }
   log();
+
+  // 4. Taste vocabulary reach over the product facet table (§5.11)
+  log("### 4. Do taste vocabularies reach the product facets?");
+  log();
+  log(
+    "Product scoring joins Qloo's taste tags to the facet table by synonym. A profile whose tags reach no facet scores nothing and the grid is left alone, so reach is the ceiling on how often product ranking does anything at all.",
+  );
+  log();
+  const signalSets: { label: string; ids: string[] }[] = [
+    { label: "Fugazi only", ids: [fugazi] },
+    ...(targets.length > 0 ? [{ label: "Fugazi + SF places", ids: [fugazi, ...targets.slice(0, 3)] }] : []),
+  ];
+  for (const set of signalSets) {
+    const tags = await tagAffinities(apiKey, baseUrl, set.ids);
+    if (tags.error !== undefined) {
+      log(`- ${set.label}: ERROR ${tags.error}`);
+      continue;
+    }
+    const reached = new Map<string, string[]>();
+    for (const facet of STYLE_FACETS) {
+      for (const value of FACET_VALUES[facet]) {
+        const hits = tags.tags.filter((t) => facetMatchesTag(value, t.name)).map((t) => t.name);
+        if (hits.length > 0) reached.set(`${facet}:${value.id}`, [...new Set(hits)]);
+      }
+    }
+    const total = STYLE_FACETS.reduce((n, f) => n + FACET_VALUES[f].length, 0);
+    log(`- **${set.label}** — ${tags.tags.length} tags, reaching ${reached.size}/${total} facet values`);
+    for (const [value, hits] of reached) log(`  - ${value} ← ${hits.join(", ")}`);
+    if (reached.size === 0) log("  - (no overlap: product grids would be left alone for this profile)");
+  }
+  log();
   return true;
 }
 
@@ -407,6 +471,13 @@ async function runQloo(): Promise<boolean> {
 // Jev (TypeSafe System One)
 // ---------------------------------------------------------------------------
 
+/**
+ * Must stay in step with TYPE_CHOICES in
+ * apps/web/lib/server/jev/client.ts — the probe measures the shipped
+ * vocabulary, so a copy that has drifted measures nothing useful. The facet
+ * vocabulary below is imported rather than copied for exactly that reason;
+ * these strings cannot be, because the probe takes no workspace dependency.
+ */
 const QLOO_TYPES: Record<string, string> = {
   place: "A physical venue: restaurant, bar, café, hotel, shop, museum or similar",
   destination: "A city, region, country or travel destination",
@@ -418,11 +489,22 @@ const QLOO_TYPES: Record<string, string> = {
   video_game: "A video game",
   brand: "A company or brand, including fashion, beauty and product brands",
   person: "A public figure such as an actor, author or athlete",
-  not_a_thing: "Not a named real-world thing: an email, article headline, product variant, ad copy or interface text",
+  product:
+    "A specific item for sale whose card does not name its brand: a garment, shoe, accessory or piece of homeware on a single-brand store",
+  not_a_thing: "Not a named real-world thing: an email, article headline, ad copy or interface text",
 };
 
 type SampleCard = { snippets: string[]; name: number | "none"; type: string; city?: string };
-type SamplePage = { label: string; site: string; title: string; cityHints: string[]; isList: boolean; cards: SampleCard[] };
+type SamplePage = {
+  label: string;
+  site: string;
+  title: string;
+  cityHints: string[];
+  isList: boolean;
+  cards: SampleCard[];
+  /** Hand-labelled facets per card, for the product describe pass (§5.11). */
+  facets?: ProductDescriptor[];
+};
 
 // Hand-labelled pages shaped like real listings; the name is not always the
 // first snippet, and the last two pages are not lists of things.
@@ -455,7 +537,9 @@ const SAMPLE_PAGES: SamplePage[] = [
     ],
   },
   {
-    label: "shop grid (brand is not the product name)",
+    // Multi-brand: every card names a brand Qloo knows, so these must keep
+    // resolving as entities. This is the path §5.11 must not regress.
+    label: "multi-brand shop grid (brand is not the product name)",
     site: "www.ssense.com",
     title: "Designer Home & Lifestyle",
     cityHints: [],
@@ -465,6 +549,33 @@ const SAMPLE_PAGES: SamplePage[] = [
       { snippets: ["New season", "Le Labo", "Santal 33 Eau de Parfum", "$220"], name: 1, type: "brand" },
       { snippets: ["Ferm Living", "Pond Mirror", "$189"], name: 0, type: "brand" },
       { snippets: ["Vitra", "Eames Elephant", "$275", "Low stock"], name: 0, type: "brand" },
+    ],
+  },
+  {
+    // The page that prompted §5.11: a single-brand store never prints its own
+    // name on the tile, so there is no brand to choose and no entity to
+    // resolve. `is_list` measured 0.45 here when products were `not_a_thing`;
+    // this sample is what re-measures it.
+    label: "single-brand product grid (uniqlo.com/ca/en/men/shirts-and-polo-shirts)",
+    site: "www.uniqlo.com",
+    title: "Men's Shirts & Polo Shirts",
+    cityHints: [],
+    isList: true,
+    cards: [
+      { snippets: ["Dry-EX Short Sleeve Polo Shirt", "$39.90", "6 Colors"], name: 0, type: "product" },
+      { snippets: ["Supima Cotton Crew Neck Short Sleeve T-Shirt", "$19.90", "12 Colors"], name: 0, type: "product" },
+      { snippets: ["New", "Selvedge Denim Work Shirt", "$59.90", "2 Colors"], name: 1, type: "product" },
+      { snippets: ["Extra Fine Merino Crew Neck Sweater", "$49.90", "9 Colors"], name: 0, type: "product" },
+      { snippets: ["Linen Blend Long Sleeve Shirt", "$39.90", "5 Colors"], name: 0, type: "product" },
+      { snippets: ["Blocktech Hooded Parka", "$99.90", "Limited offer", "3 Colors"], name: 0, type: "product" },
+    ],
+    facets: [
+      { style: "athletic", formality: "casual" },
+      { style: "minimal", formality: "casual" },
+      { style: "workwear", formality: "smart-casual" },
+      { style: "minimal", formality: "smart-casual" },
+      { style: "classic", formality: "smart-casual" },
+      { style: "outdoor", formality: "casual" },
     ],
   },
   {
@@ -499,7 +610,8 @@ function buildJevRequest(page: SamplePage, model: string): Record<string, unknow
   const questions: Record<string, unknown> = {
     is_list: {
       type: "noul",
-      instructions: "Is this page section a list of named real-world things (venues, films, shows, artists, books, podcasts, games, brands, destinations or public figures)?",
+      instructions:
+        "Is this page section a list of named real-world things (venues, films, shows, artists, books, podcasts, games, brands, destinations, public figures or products for sale)?",
       criteria: null,
     },
   };
@@ -511,7 +623,7 @@ function buildJevRequest(page: SamplePage, model: string): Record<string, unknow
     const nameCriteria: Record<string, string> = { ...snippets, none: "None of these snippets names a real-world thing" };
     questions[`c${index}_name`] = {
       type: "choice",
-      instructions: `Which snippet of card c${index} is the name of the thing the card is about? For a product card, choose the brand.`,
+      instructions: `Which snippet of card c${index} is the name of the thing the card is about? If the card names a brand, choose the brand. Otherwise, for a product card, choose the product name — never the price or the colour count.`,
       criteria: nameCriteria,
     };
     questions[`c${index}_type`] = {
@@ -540,6 +652,26 @@ function buildJevRequest(page: SamplePage, model: string): Record<string, unknow
   };
 }
 
+/**
+ * Mirrors buildDescribeRequest in apps/web/lib/server/jev/client.ts: the
+ * facets are read from the product name alone, one single-choice question per
+ * facet. The criteria come from the shared vocabulary, so only the
+ * instruction text can drift.
+ */
+function buildDescribeRequest(names: string[], model: string): Record<string, unknown> {
+  const questions: Record<string, unknown> = {};
+  names.forEach((name, index) => {
+    for (const facet of STYLE_FACETS) {
+      questions[`p${index}_${facet}`] = {
+        type: "choice",
+        instructions: `For the product "${name}", which ${facet} does it belong to?`,
+        criteria: facetCriteria(facet),
+      };
+    }
+  });
+  return { model, state: { products: names.map((name, index) => ({ id: `p${index}`, name })) }, questions };
+}
+
 type Graded = { field: string; correct: boolean; confidence: number };
 
 async function runJev(): Promise<boolean> {
@@ -565,6 +697,7 @@ async function runJev(): Promise<boolean> {
   log();
 
   const graded: Graded[] = [];
+  const facetGraded: Graded[] = [];
   let totalTokens = 0;
   let totalCards = 0;
   for (const page of SAMPLE_PAGES) {
@@ -586,10 +719,14 @@ async function runJev(): Promise<boolean> {
     totalCards += page.cards.length;
 
     const isList = asNumber(asRecord(answers.is_list)?.noul);
+    // The 0.5 cut-off is the gate the whole page passes or fails on, so call
+    // the verdict rather than leaving the reader to compare two numbers.
+    const listVerdict =
+      isList === undefined ? "?" : `${round(isList, 2)} ${isList >= 0.5 === page.isList ? "✓" : "✗"}`;
     log(
       `**${page.label}** — ${ms} ms, ${tokens ?? "?"} input tokens` +
         (tokens !== undefined ? ` (~$${(tokens / 1e6 * pricePerMTok).toFixed(6)})` : "") +
-        `, is a list: ${isList !== undefined ? round(isList, 2) : "?"} (expected ${page.isList ? "yes" : "no"})`,
+        `, is a list: ${listVerdict} (expected ${page.isList ? "yes" : "no"}, cut-off 0.5)`,
     );
 
     page.cards.forEach((card, index) => {
@@ -614,6 +751,64 @@ async function runJev(): Promise<boolean> {
       }
       log(`  - c${index} ${card.snippets.join(" | ")} → ${parts.join("; ")}`);
     });
+
+    // Second call, product pages only: the facets are read from the product
+    // name alone, so this is the accuracy §5.11's scoring actually rests on.
+    if (page.facets !== undefined) {
+      const names = page.cards.map((card) => (card.name === "none" ? "" : (card.snippets[card.name] ?? "")));
+      const started2 = performance.now();
+      const res2 = await fetch(`${baseUrl}/v1/systemone`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(buildDescribeRequest(names, model)),
+      });
+      const ms2 = Math.round(performance.now() - started2);
+      const body2: unknown = await res2.json().catch(() => undefined);
+      if (!res2.ok) {
+        log(`  describe — HTTP ${res2.status}: ${errorText(body2)}`);
+      } else {
+        const a2 = asRecord(asRecord(body2)?.answers) ?? {};
+        const tokens2 = asNumber(asRecord(asRecord(body2)?.usage)?.input_tokens);
+        if (tokens2 !== undefined) totalTokens += tokens2;
+        log(`  describe — ${ms2} ms, ${tokens2 ?? "?"} input tokens`);
+        names.forEach((productName, index) => {
+          const expected = page.facets![index] ?? {};
+          const parts: string[] = [];
+          for (const facet of STYLE_FACETS) {
+            const answer = asRecord(a2[`p${index}_${facet}`]) as JevChoice | undefined;
+            const got = answer?.choice ?? "?";
+            const want = expected[facet];
+            // An unlabelled facet is not graded: "unknown" is a valid answer
+            // for an axis a title genuinely does not carry (palette, mostly).
+            if (want === undefined) {
+              parts.push(`${facet} – (got ${got})`);
+              continue;
+            }
+            const correct = got === want;
+            facetGraded.push({ field: facet, correct, confidence: answer?.confidence ?? 0 });
+            parts.push(`${facet} ${correct ? "✓" : `✗ (got ${got}, want ${want})`} ${round(answer?.confidence ?? 0, 2)}`);
+          }
+          log(`  - p${index} ${productName} → ${parts.join("; ")}`);
+        });
+      }
+    }
+    log();
+  }
+
+  if (facetGraded.length > 0) {
+    log("### Facet accuracy (product descriptors)");
+    log();
+    log("| facet | graded | correct | mean confidence |");
+    log("|---|---|---|---|");
+    for (const facet of [...STYLE_FACETS, "all" as const]) {
+      const rows = facet === "all" ? facetGraded : facetGraded.filter((g) => g.field === facet);
+      if (rows.length === 0) continue;
+      const correct = rows.filter((g) => g.correct).length;
+      const meanConfidence = rows.reduce((s, g) => s + g.confidence, 0) / rows.length;
+      log(`| ${facet} | ${rows.length} | ${correct} (${round((correct / rows.length) * 100, 1)}%) | ${round(meanConfidence, 2)} |`);
+    }
+    log();
+    log(`Facets below the ${0.6} confidence floor are dropped by \`parseDescribeAnswers\`, leaving the axis unset.`);
     log();
   }
 

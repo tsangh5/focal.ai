@@ -42,7 +42,10 @@ const STYLE_VALUES: FacetValue[] = [
   {
     id: "minimal",
     name: "minimal",
-    synonyms: ["minimal", "minimalism", "minimalist", "understated", "sparse", "ambient", "scandinavian", "japanese"],
+    // Not "japanese": Qloo uses it as a cuisine tag far more often than as a
+    // design reference, so it would read a taste for ramen as a taste for
+    // plain knitwear.
+    synonyms: ["minimal", "minimalism", "minimalist", "understated", "sparse", "ambient", "scandinavian"],
     keywords: ["crew neck", "merino", "supima", "seamless", "plain", "essential", "cashmere"],
   },
   {
@@ -96,7 +99,8 @@ const STYLE_VALUES: FacetValue[] = [
   {
     id: "utility",
     name: "utility",
-    synonyms: ["utility", "functional", "technical", "industrial", "military", "techno", "brutalist", "science fiction"],
+    // Not "science fiction": a genre tag with no clothing implication.
+    synonyms: ["utility", "functional", "technical", "industrial", "military", "techno", "brutalist"],
     keywords: ["cargo", "utility", "tech", "pocket", "ripstop", "nylon", "padded"],
   },
 ];
@@ -117,7 +121,10 @@ const PALETTE_VALUES: FacetValue[] = [
   {
     id: "earth",
     name: "earthy",
-    synonyms: ["earth", "earthy", "natural", "organic", "folk", "country", "americana"],
+    // Not "natural" or "organic": both are food-and-drink words in Qloo's
+    // vocabulary ("Natural Wine", "Organic"), and a taste in wine says
+    // nothing about a colour palette.
+    synonyms: ["earth", "earthy", "folk", "country", "americana"],
     keywords: ["olive", "brown", "rust", "terracotta", "moss", "camel", "clay"],
   },
   {

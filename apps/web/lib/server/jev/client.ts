@@ -30,7 +30,8 @@ const TYPE_CHOICES: Record<string, { type: ShortType | null; description: string
   // the facet scoring path rather than being resolved as entities.
   product: {
     type: "product",
-    description: "A specific item for sale: a garment, shoe, accessory or piece of homeware",
+    description:
+      "A specific item for sale whose card does not name its brand: a garment, shoe, accessory or piece of homeware on a single-brand store",
   },
   not_a_thing: {
     type: null,
@@ -70,7 +71,11 @@ export function buildJevRequest(body: IdentifyBody, model: string): Record<strin
     const snippets = Object.fromEntries(card.snippets.map((text, i) => [`s${i}`, text]));
     questions[`c${index}_name`] = {
       type: "choice",
-      instructions: `Which snippet of card c${index} is the name of the thing the card is about? For a product card, choose the product name — not the price, the colour count or the brand.`,
+      // Brand first: a multi-brand retailer resolves to real Qloo entities and
+      // ranks on verified affinities, which beats facet scoring. Only a card
+      // that never names a brand — the single-brand store case — falls through
+      // to the product name and the facet path (§5.11).
+      instructions: `Which snippet of card c${index} is the name of the thing the card is about? If the card names a brand, choose the brand. Otherwise, for a product card, choose the product name — never the price or the colour count.`,
       criteria: { ...snippets, none: "None of these snippets names a real-world thing" },
     };
     questions[`c${index}_type`] = {

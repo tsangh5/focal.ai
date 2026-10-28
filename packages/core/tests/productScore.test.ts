@@ -59,6 +59,20 @@ describe("scoreProduct", () => {
     const tags: TasteTag[] = [{ id: "t", name: "Minimalism", affinity: 0.7 }];
     expect(scoreProduct({ style: "minimal" }, tags).matches[0]?.tagId).toBe("t");
   });
+
+  // The failure class the table exists to avoid: a tag from an unrelated
+  // domain reaching a facet through a word that means something else there,
+  // which manufactures a taste signal out of nothing.
+  it.each([
+    ["Natural Wine", { palette: "earth" }],
+    ["Organic", { palette: "earth" }],
+    ["Japanese", { style: "minimal" }],
+    ["Science Fiction", { style: "utility" }],
+    ["Thai", { palette: "bright" }],
+  ])("does not read %s as a style signal", (tagName, descriptor) => {
+    const tags: TasteTag[] = [{ id: "t", name: tagName, affinity: 0.9 }];
+    expect(scoreProduct(descriptor, tags).matches).toEqual([]);
+  });
 });
 
 describe("scoreProducts", () => {

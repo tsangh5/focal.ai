@@ -236,7 +236,7 @@ Speed targets: first visit to a page about 2–3 s (Qloo pacing), repeat pages 0
 | How reliable is automatic list detection on real sites? | Core promise | Prototype the extractor and run it on saved pages from 10 target sites (restaurants, hotels, films, music, books, games, fashion) |
 | Does `is_list` clear 0.5 on a product grid now that `product` is a type choice? | All of §5.11 depends on it; it measured 0.45 when products were `not_a_thing` | `pnpm probe:unknowns jev` on a saved Uniqlo and a saved multi-brand grid, reading the page-level score before and after the vocabulary change |
 | How accurately does Jev read style, palette and formality from a product name alone? | Whether the facet confidence floor of 0.6 is right, and whether palette is answerable at all from titles that rarely name a colour | Same probe: hand-label the facets for ~40 real product titles and report accuracy per facet by confidence |
-| Do real taste vocabularies overlap the style synonym table? | A profile whose Qloo tags never match a facet scores nothing and the grid is left alone | Run `tagAffinities` for several seeded profiles and count how many of the 20 facet values any returned tag reaches |
+| Do real taste vocabularies overlap the style synonym table? | A profile whose Qloo tags never match a facet scores nothing and the grid is left alone | `pnpm probe:unknowns qloo` §4 runs `tagAffinities` for seeded profiles and reports how many of the 20 facet values the returned tags reach, listing each link so false positives are visible |
 
 ### Results (2026-10-20, live keys)
 
@@ -250,6 +250,14 @@ Speed targets: first visit to a page about 2–3 s (Qloo pacing), repeat pages 0
 - **Live end-to-end** (Jev identify, then one live insights call): a 9-card SF page identified in 148 ms and ranked in 1.6 s. One item was lifted, labelled "Top pick for you · because you like Rintaro and Fugazi". Places the user already likes come back unscored because Qloo leaves signal entities out of results; whether to lift them anyway is an open product call.
 - **Free LLM (Groq):** `openai/gpt-oss-120b` is listed and returns a correct tool call (`search_entities({"query":"Fugazi","type":"artist"})`) in 404 ms. Free-tier limits seen: 1,000 requests and 8,000 tokens per minute. The token limit is tight, so chat context must stay compact (`summarizeProfile`). Cerebras and OpenRouter are untested (no keys).
 - **Sign-in and database:** see `docs/auth-and-db.md`.
+
+### Results (2026-10-28, offline)
+
+Measured without keys, against the mock taste vocabulary, so it bounds the synonym table rather than Jev or live Qloo:
+
+- **Facet reach:** 8 tags reach 9 of the 20 facet values. Every link is one aesthetic cluster — Minimalism → minimal / neutral / monochrome, Punk and Post-Punk → workwear / street / dark, Heritage and Classical → classic / formal, Casual → casual.
+- **Two false positives found and removed.** "Natural Wine" reached `palette:earth` through the synonym "natural", and "Japanese" reached `style:minimal`; both are food-and-drink words in Qloo's vocabulary, so the table was reading a taste in wine or ramen as a taste in clothes. "Science Fiction" → `style:utility` went too. Reach fell from 11 to 9, which is the right trade: a missed link leaves the grid alone, an invented one re-orders a page on a reason that does not exist. `productScore.test.ts` now pins this failure class.
+- **Still unknown:** everything that needs a key — whether `is_list` clears 0.5, facet accuracy from titles, and reach for real profiles rather than the fixture.
 
 The probe script writes its report to `scripts/probe-output/` (gitignored, since Qloo data must not be stored in the public repo). Keys are read from `.env` or `apps/web/.env.local`: `QLOO_API_KEY`, `TYPESAFE_API_KEY`, and optionally `GROQ_API_KEY`, `CEREBRAS_API_KEY`, `OPENROUTER_API_KEY`.
 
