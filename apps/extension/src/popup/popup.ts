@@ -40,6 +40,8 @@ async function main(): Promise<void> {
     toggle.checked = !settings.siteOff.includes(host);
     toggle.addEventListener("change", async () => {
       await setSettings(toggleSite(await getSettings(), host, toggle.checked));
+      // Keep the account's copy in step so the website's settings page shows it.
+      if (session) void chrome.runtime.sendMessage({ type: "sync-settings" }).catch(() => {});
       if (tab?.id !== undefined) await chrome.tabs.reload(tab.id);
     });
   }

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { LogIn, LogOut, MessageCircle, Plug, UserRound } from "lucide-react";
+import { LogIn, LogOut, MessageCircle, Plug, Settings, Sparkles, UserRound } from "lucide-react";
 import { buttonVariants } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -62,6 +62,14 @@ export function AccountMenu({ className }: { className?: string }) {
         <DropdownMenuItem render={<Link href="/chat" />}>
           <MessageCircle />
           Chat
+        </DropdownMenuItem>
+        <DropdownMenuItem render={<Link href="/profile" />}>
+          <Sparkles />
+          Your taste
+        </DropdownMenuItem>
+        <DropdownMenuItem render={<Link href="/settings" />}>
+          <Settings />
+          Settings
         </DropdownMenuItem>
         <DropdownMenuItem render={<Link href="/connect" />}>
           <Plug />

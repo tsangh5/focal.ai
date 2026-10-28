@@ -154,4 +154,45 @@ describe("applyPlan", () => {
     applyPlan(list, plan([{ op: "reorder", containerId: "x", order: ["c3"] }])).undo();
     expect(list.container.outerHTML).toBe(html);
   });
+
+  it("extend labels newly loaded cards in place and keeps them after the lifted ones in CSS order", () => {
+    const d = page(RESTAURANT_GRID);
+    const list = detectList(d)!;
+    const handle = applyPlan(list, plan([{ op: "reorder", containerId: "x", order: ["c2", "c0", "c1", "c3"] }]));
+    const orderBefore = [...list.container.children].map((el) => (el as HTMLElement).style.order);
+    const card = d.createElement("div");
+    card.className = "card card-1005";
+    card.innerHTML = '<a href="/biz/nakamura"><h3>Nakamura</h3></a><p>Ramen · $$</p><span>172 Delancey St</span>';
+    list.container.append(card);
+    handle.extend([{ op: "annotate", containerId: "x", clientId: "c9", text: "Good match", badge: "good-match" }], new Map([["c9", card]]));
+    expect([...list.container.children].slice(0, -1).map((el) => (el as HTMLElement).style.order)).toEqual(orderBefore);
+    expect(Number(card.style.order)).toBeGreaterThan(Math.max(...orderBefore.map(Number)));
+    expect(card.querySelector('[data-focal="label"]')).not.toBeNull();
+    handle.undo();
+    expect(card.querySelector('[data-focal="label"]')).toBeNull();
+    expect(card.getAttribute("style")).toBeNull();
+  });
+
+  it("labels carry More like this / Not for me that report the card and show the result", async () => {
+    const d = page(BOOK_LIST);
+    const onFeedback = vi.fn(async () => true);
+    applyPlan(detectList(d)!, plan([{ op: "annotate", containerId: "x", clientId: "c1", text: "Top pick for you · because you like Circe", badge: "top-pick" }], 0), { onFeedback });
+    const root = d.querySelector('[data-focal="label"]')!.shadowRoot!;
+    const more = root.querySelector<HTMLButtonElement>('button[data-verdict="more"]')!;
+    expect(more.getAttribute("aria-label")).toBe("More like this");
+    expect(root.querySelector('button[data-verdict="less"]')!.getAttribute("aria-label")).toBe("Not for me");
+    more.click();
+    await vi.waitFor(() => expect(root.querySelector('[role="status"]')!.textContent).toBe("Saved · more like this"));
+    expect(onFeedback).toHaveBeenCalledWith("c1", "more");
+    expect(root.querySelector("button")).toBeNull();
+  });
+
+  it("feedback that fails to save re-enables the buttons", async () => {
+    const d = page(BOOK_LIST);
+    applyPlan(detectList(d)!, plan([{ op: "annotate", containerId: "x", clientId: "c0", text: "Good match", badge: "good-match" }], 0), { onFeedback: async () => false });
+    const root = d.querySelector('[data-focal="label"]')!.shadowRoot!;
+    root.querySelector<HTMLButtonElement>('button[data-verdict="less"]')!.click();
+    await vi.waitFor(() => expect(root.querySelector('[role="status"]')!.textContent).toBe("Couldn't save, try again"));
+    expect([...root.querySelectorAll("button")].every((b) => !b.disabled)).toBe(true);
+  });
 });

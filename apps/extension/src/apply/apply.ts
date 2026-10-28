@@ -8,9 +8,13 @@ export interface ApplyTarget {
   cards: Map<string, Element>;
 }
 
+export type Verdict = "more" | "less";
+
 export interface ApplyOptions {
   onWhy?: () => void;
   onUndo?: () => void;
+  /** "More like this" / "Not for me" on a label; resolves whether it was saved. */
+  onFeedback?: (clientId: string, verdict: Verdict) => Promise<boolean>;
   /** Force a mode; by default flex / grid containers use CSS order. */
   mode?: "css-order" | "move";
 }
@@ -19,6 +23,8 @@ export interface ApplyHandle {
   mode: "css-order" | "move";
   lifted: number;
   undo(): void;
+  /** Labels, highlights and folds for cards that arrived later; never reorders (§5.7). */
+  extend(ops: RenderOp[], more: Map<string, Element>): void;
   readonly active: boolean;
 }
 
@@ -115,7 +121,58 @@ const LABEL_STYLE: Record<string, string> = {
   "good-match": "background:#18181b;color:#fafafa;border:1px solid #3f3f46",
 };
 
-function labelElement(doc: Document, text: string, badge: string | undefined, compact = false): HTMLElement {
+const FEEDBACK_STYLE =
+  "all:unset;box-sizing:border-box;display:inline-flex;align-items:center;height:22px;padding:0 8px;margin:0 0 0 4px;" +
+  'border-radius:999px;cursor:pointer;font:500 11.5px/1 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;' +
+  "color:#fafafa;background:#18181b;border:1px solid #3f3f46;white-space:nowrap";
+
+const FEEDBACK_TEXT: Record<Verdict, { label: string; done: string }> = {
+  more: { label: "More like this", done: "Saved · more like this" },
+  less: { label: "Not for me", done: "Saved · not for you" },
+};
+
+function feedbackButtons(doc: Document, onFeedback: (verdict: Verdict) => Promise<boolean>, compact: boolean): HTMLElement {
+  const row = doc.createElement("span");
+  row.setAttribute("style", "display:inline-flex;align-items:center;flex-wrap:wrap;gap:0;vertical-align:middle");
+  const status = doc.createElement("span");
+  status.setAttribute("role", "status");
+  status.setAttribute("style", 'margin-left:6px;font:500 11.5px/1 ui-sans-serif,system-ui,sans-serif;color:#a1a1aa');
+  const buttons = (["more", "less"] as const).map((verdict) => {
+    const b = doc.createElement("button");
+    b.type = "button";
+    b.setAttribute("data-verdict", verdict);
+    b.setAttribute("aria-label", FEEDBACK_TEXT[verdict].label);
+    b.title = FEEDBACK_TEXT[verdict].label;
+    b.textContent = compact ? (verdict === "more" ? "+" : "−") : FEEDBACK_TEXT[verdict].label;
+    b.setAttribute("style", FEEDBACK_STYLE);
+    b.addEventListener("click", (event) => {
+      // The label sits inside the site's card, which is often a link.
+      event.preventDefault();
+      event.stopPropagation();
+      for (const other of buttons) other.disabled = true;
+      void onFeedback(verdict).then((saved) => {
+        if (saved) {
+          for (const other of buttons) other.remove();
+          status.textContent = FEEDBACK_TEXT[verdict].done;
+        } else {
+          for (const other of buttons) other.disabled = false;
+          status.textContent = "Couldn't save, try again";
+        }
+      });
+    });
+    return b;
+  });
+  row.append(...buttons, status);
+  return row;
+}
+
+function labelElement(
+  doc: Document,
+  text: string,
+  badge: string | undefined,
+  compact = false,
+  onFeedback?: (verdict: Verdict) => Promise<boolean>,
+): HTMLElement {
   const kind = badge === "top-pick" ? "top-pick" : "good-match";
   const host = make(doc, "focal-label", "label");
   host.setAttribute("data-badge", badge ?? "good-match");
@@ -133,6 +190,7 @@ function labelElement(doc: Document, text: string, badge: string | undefined, co
   span.append(doc.createTextNode(compact ? (text.split(" · ")[0] ?? text) : text));
   if (compact) span.title = text;
   root.append(span);
+  if (onFeedback) root.append(feedbackButtons(doc, onFeedback, compact));
   // width:0 + min-width:100% fills the card without letting the label's text widen it.
   host.setAttribute("style", "all:initial;display:block;width:0;min-width:100%");
   popIn(span);
@@ -157,6 +215,58 @@ export function applyPlan(target: ApplyTarget, plan: RenderPlan, opts: ApplyOpti
   const reorder = plan.ops.find((o): o is Extract<RenderOp, { op: "reorder" }> => o.op === "reorder");
   const lifted = plan.summary.lifted ?? plan.summary.moved;
   const sequence = reorder ? sequenceFor(container, cards, reorder.order, lifted) : originalChildren;
+  const position = (el: Element) => (el as HTMLElement).style.getPropertyValue("order");
+
+  /** Labels, highlights and folds; shared by the first apply and later top-ups. */
+  function applyOp(op: RenderOp): void {
+    if (op.op === "annotate") {
+      const card = cards.get(op.clientId) as HTMLElement | undefined;
+      if (!card) return;
+      const slot = labelSlot(card);
+      const width = slot.getBoundingClientRect().width;
+      const onFeedback = opts.onFeedback;
+      const label = labelElement(doc, op.text, op.badge, width > 0 && width < 160, onFeedback && ((v) => onFeedback(op.clientId, v)));
+      slot.prepend(label);
+      inserted.push(label);
+    } else if (op.op === "emphasize") {
+      const card = cards.get(op.clientId) as HTMLElement | undefined;
+      if (!card) return;
+      saveStyle(card, savedStyles);
+      card.style.setProperty("outline", "2px solid rgba(110, 86, 207, 0.7)");
+      card.style.setProperty("outline-offset", "3px");
+    } else if (op.op === "collapse" || op.op === "hide") {
+      const els = op.clientIds.map((id) => cards.get(id)).filter((el): el is HTMLElement => !!el);
+      const first = els.slice().sort((a, b) => sequence.indexOf(a) - sequence.indexOf(b))[0];
+      if (!first) return;
+      for (const el of els) {
+        saveStyle(el, savedStyles);
+        el.style.setProperty("display", "none");
+      }
+      const fold = decorate(make(doc, "div", "fold"), "fold");
+      fold.append(doc.createTextNode(op.label));
+      let holder: HTMLElement = fold;
+      if (first.tagName === "TR") {
+        holder = make(doc, "tr", "fold-row");
+        const cell = doc.createElement("td");
+        cell.colSpan = Math.max(1, first.children.length);
+        cell.append(fold);
+        holder.append(cell);
+      }
+      if (op.op === "collapse") {
+        const show = make(doc, "button", "show", "Show");
+        show.setAttribute("type", "button");
+        show.addEventListener("click", () => {
+          for (const el of els) el.style.removeProperty("display");
+          holder.remove();
+        });
+        fold.append(show);
+      }
+      if (mode === "css-order" && position(first)) holder.style.setProperty("order", position(first));
+      first.before(holder);
+      inserted.push(holder);
+    }
+  }
+
   const handle: ApplyHandle = {
     mode,
     lifted,
@@ -178,6 +288,28 @@ export function applyPlan(target: ApplyTarget, plan: RenderPlan, opts: ApplyOpti
       });
       opts.onUndo?.();
     },
+    extend(ops, more) {
+      if (!active) return;
+      const fresh = [...more].filter(([, el]) => ![...cards.values()].includes(el));
+      for (const [id, el] of fresh) cards.set(id, el);
+      flip(
+        fresh.map(([, el]) => el),
+        () => {
+          // Cards appended after a CSS-order apply default to order 0, which would
+          // slot them in next to the lifted ones; keep them at the end instead.
+          if (mode === "css-order") {
+            let next = container.children.length;
+            for (const [, el] of fresh) {
+              const h = el as HTMLElement;
+              if (h.style.getPropertyValue("order")) continue;
+              saveStyle(h, savedStyles);
+              h.style.setProperty("order", String(next++));
+            }
+          }
+          for (const op of ops) if (op.op !== "reorder") applyOp(op);
+        },
+      );
+    },
   };
 
   const cardEls = [...cards.values()];
@@ -195,55 +327,7 @@ export function applyPlan(target: ApplyTarget, plan: RenderPlan, opts: ApplyOpti
       }
     }
 
-    const position = (el: Element) => (el as HTMLElement).style.getPropertyValue("order");
-
-    for (const op of plan.ops) {
-      if (op.op === "annotate") {
-        const card = cards.get(op.clientId) as HTMLElement | undefined;
-        if (!card) continue;
-        const slot = labelSlot(card);
-        const width = slot.getBoundingClientRect().width;
-        const label = labelElement(doc, op.text, op.badge, width > 0 && width < 160);
-        slot.prepend(label);
-        inserted.push(label);
-      } else if (op.op === "emphasize") {
-        const card = cards.get(op.clientId) as HTMLElement | undefined;
-        if (!card) continue;
-        saveStyle(card, savedStyles);
-        card.style.setProperty("outline", "2px solid rgba(110, 86, 207, 0.7)");
-        card.style.setProperty("outline-offset", "3px");
-      } else if (op.op === "collapse" || op.op === "hide") {
-        const els = op.clientIds.map((id) => cards.get(id)).filter((el): el is HTMLElement => !!el);
-        const first = els.slice().sort((a, b) => sequence.indexOf(a) - sequence.indexOf(b))[0];
-        if (!first) continue;
-        for (const el of els) {
-          saveStyle(el, savedStyles);
-          el.style.setProperty("display", "none");
-        }
-        const fold = decorate(make(doc, "div", "fold"), "fold");
-        fold.append(doc.createTextNode(op.label));
-        let holder: HTMLElement = fold;
-        if (first.tagName === "TR") {
-          holder = make(doc, "tr", "fold-row");
-          const cell = doc.createElement("td");
-          cell.colSpan = Math.max(1, first.children.length);
-          cell.append(fold);
-          holder.append(cell);
-        }
-        if (op.op === "collapse") {
-          const show = make(doc, "button", "show", "Show");
-          show.setAttribute("type", "button");
-          show.addEventListener("click", () => {
-            for (const el of els) el.style.removeProperty("display");
-            holder.remove();
-          });
-          fold.append(show);
-        }
-        if (mode === "css-order" && position(first)) holder.style.setProperty("order", position(first));
-        first.before(holder);
-        inserted.push(holder);
-      }
-    }
+    for (const op of plan.ops) applyOp(op);
     if (reorder || plan.ops.some((o) => o.op === "collapse" || o.op === "hide")) blockAnchor(container).before(strip());
   }, glow);
 

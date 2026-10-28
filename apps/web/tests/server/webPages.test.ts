@@ -1,4 +1,4 @@
-import { beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PageResultItem } from "@focal-ai/core";
 import { safeReturnTo } from "@/lib/server/auth/returnTo";
 import { __setDbForTests } from "@/lib/server/db";
@@ -10,6 +10,9 @@ import {
 } from "@/lib/server/page/store";
 import { __resetRateLimitForTests } from "@/lib/server/rateLimit";
 import { buildWhyView } from "@/lib/why";
+
+// Route handlers call connection() to stay per-request; outside Next there is no request scope.
+vi.mock("next/server", async (importOriginal) => ({ ...(await importOriginal<typeof import("next/server")>()), connection: async () => {} }));
 
 process.env.QLOO_MOCK = "1";
 process.env.FOCAL_DEV_SESSION = "1";

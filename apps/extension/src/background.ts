@@ -1,17 +1,16 @@
 import type { BackgroundReply, ContentMessage, ExternalMessage } from "./api";
 import { FOCAL_ORIGIN } from "./config";
 import { parseSettings } from "./settings";
-import { getSession, setSession, setSettings, setTabResult } from "./storage";
+import { getSession, getSettings, setSession, setSettings, setTabResult } from "./storage";
 
-/** All server calls go from here; content scripts never call the API. */
-async function post<T>(path: string, body: unknown): Promise<BackgroundReply<T>> {
+async function call<T>(method: "GET" | "POST" | "PUT", path: string, body?: unknown): Promise<BackgroundReply<T>> {
   const session = await getSession();
   if (!session) return { ok: false, error: "signed_out", status: 401 };
   try {
     const res = await fetch(`${FOCAL_ORIGIN}${path}`, {
-      method: "POST",
+      method,
       headers: { "content-type": "application/json", authorization: `Bearer ${session.token}` },
-      body: JSON.stringify(body),
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
     if (res.status === 401) await setSession(null);
     if (!res.ok) return { ok: false, error: `http_${res.status}`, status: res.status };
@@ -21,14 +20,42 @@ async function post<T>(path: string, body: unknown): Promise<BackgroundReply<T>>
   }
 }
 
+const post = <T>(path: string, body: unknown) => call<T>("POST", path, body);
+
+const SETTINGS_REFRESH_MS = 5 * 60 * 1000;
+let settingsFetchedAt = 0;
+
+/**
+ * Sites to skip and sites switched off live on the server (edited on the
+ * website); keep the local copy fresh so eligibility checks never wait on it.
+ * Incognito stays a per-browser choice.
+ */
+async function refreshSettings(force = false): Promise<void> {
+  if (!force && Date.now() - settingsFetchedAt < SETTINGS_REFRESH_MS) return;
+  settingsFetchedAt = Date.now();
+  const res = await call<{ skipSites: string[]; siteOff: string[] }>("GET", "/api/settings");
+  if (!res.ok) return;
+  const current = await getSettings();
+  await setSettings(parseSettings({ ...res.data, incognito: current.incognito }));
+}
+
+async function pushSettings(): Promise<void> {
+  const { skipSites, siteOff } = await getSettings();
+  await call("PUT", "/api/settings", { skipSites, siteOff });
+}
+
 chrome.runtime.onMessage.addListener((msg: ContentMessage, sender, sendResponse) => {
   const tabId = sender.tab?.id;
   switch (msg.type) {
     case "identify":
+      void refreshSettings();
       void post("/api/page/identify", msg.body).then(sendResponse);
       return true;
     case "rank":
       void post("/api/page/rank", msg.body).then(sendResponse);
+      return true;
+    case "feedback":
+      void post("/api/feedback", msg.body).then(sendResponse);
       return true;
     case "page-result":
       if (tabId !== undefined) void setTabResult(tabId, { pageResultId: msg.pageResultId, lifted: msg.lifted });
@@ -36,12 +63,14 @@ chrome.runtime.onMessage.addListener((msg: ContentMessage, sender, sendResponse)
     case "open-why":
       void chrome.tabs.create({ url: `${FOCAL_ORIGIN}/why/${encodeURIComponent(msg.pageResultId)}` });
       return false;
+    case "sync-settings":
+      void pushSettings().then(() => sendResponse({ ok: true }));
+      return true;
     default:
       return false;
   }
 });
 
-/** Session handoff: only the focal origin may talk to the extension. */
 chrome.runtime.onMessageExternal.addListener((msg: ExternalMessage, sender, sendResponse) => {
   if (sender.origin !== FOCAL_ORIGIN) {
     sendResponse({ ok: false, error: "forbidden_origin" });
@@ -50,15 +79,21 @@ chrome.runtime.onMessageExternal.addListener((msg: ExternalMessage, sender, send
   switch (msg?.type) {
     case "focal:session":
       if (typeof msg.token !== "string" || !msg.token) break;
-      void setSession({ token: msg.token, email: msg.email, savedAt: new Date().toISOString() }).then(() =>
-        sendResponse({ ok: true }),
-      );
+      void setSession({ token: msg.token, email: msg.email, savedAt: new Date().toISOString() })
+        .then(() => refreshSettings(true))
+        .then(() => sendResponse({ ok: true }));
       return true;
     case "focal:signout":
       void setSession(null).then(() => sendResponse({ ok: true }));
       return true;
     case "focal:settings":
-      void setSettings(parseSettings(msg.settings)).then(() => sendResponse({ ok: true }));
+      void getSettings()
+        .then((current) => {
+          const raw = msg.settings && typeof msg.settings === "object" ? (msg.settings as Record<string, unknown>) : {};
+          // The website doesn't manage incognito; keep this browser's choice unless it is sent.
+          return setSettings(parseSettings({ incognito: current.incognito, ...raw }));
+        })
+        .then(() => sendResponse({ ok: true }));
       return true;
     case "focal:ping":
       sendResponse({ ok: true, version: chrome.runtime.getManifest().version });

@@ -61,8 +61,12 @@ export const CHAT_TOOLS: ToolSpec[] = [
     type: "function",
     function: {
       name: "remove_entry",
-      description: "Remove something from the profile by name.",
-      parameters: { type: "object", properties: { name: { type: "string" } }, required: ["name"] },
+      description: "Remove something from the profile by name. Pass kind when a thing, vibe and rule share a name.",
+      parameters: {
+        type: "object",
+        properties: { name: { type: "string" }, kind: { type: "string", enum: ["thing", "vibe", "rule"] } },
+        required: ["name"],
+      },
     },
   },
   {

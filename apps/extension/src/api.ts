@@ -41,11 +41,28 @@ export interface RankResponse {
   plan: RenderPlan | null;
 }
 
+export type Verdict = "more" | "less";
+
+/** "More like this" / "Not for me" on a lifted card (§5.8). */
+export interface FeedbackRequest {
+  pageResultId: string;
+  clientId: string;
+  verdict: Verdict;
+}
+
+export interface FeedbackResponse {
+  saved: boolean;
+  name?: string;
+  strength?: string;
+}
+
 export type ContentMessage =
   | { type: "identify"; body: IdentifyRequest }
   | { type: "rank"; body: RankRequest }
+  | { type: "feedback"; body: FeedbackRequest }
   | { type: "page-result"; pageResultId: string; lifted: number }
-  | { type: "open-why"; pageResultId: string };
+  | { type: "open-why"; pageResultId: string }
+  | { type: "sync-settings" };
 
 export type BackgroundReply<T> = { ok: true; data: T } | { ok: false; error: string; status?: number };
 

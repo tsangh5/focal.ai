@@ -11,7 +11,13 @@ Two MCP servers live here:
   attributed `mcp:<client>` and undoable, and settings are not exposed. Setup per
   client is on the website's `/connect` page; the Claude Code plugin is in
   `plugins/focal`.
-- **Local stdio (`src/index.ts`)**, described below.
+- **Local stdio (`src/index.ts`)**, in one of two modes:
+  - **Account mode**, when `FOCAL_TOKEN` is set to a focal session token (the one
+    the website hands the extension; `POST /api/extension/session` issues one):
+    it forwards to the hosted endpoint (`FOCAL_MCP_URL`, default
+    `http://localhost:3000/mcp`), so stdio-only clients get the same nine tools,
+    writes included (`src/bridge.ts`).
+  - **Local mode** otherwise, described below (`src/local.ts`).
 
 A local [Model Context Protocol](https://modelcontextprotocol.io) server (stdio) for
 focal.ai. It lets external agents (Claude Desktop, Claude Code, any MCP client) read

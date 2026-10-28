@@ -1,168 +1,61 @@
-"use client";
+import Link from "next/link";
+import { SiteHeader } from "@/components/site/SiteHeader";
+import { buttonVariants } from "@/components/ui/button";
+import { authEnabled } from "@/lib/server/auth/config";
 
-import { useEffect, useState } from "react";
-import type { RankedCandidate, RenderPlan } from "@focal-ai/core";
-import { PasteList } from "@/components/paste/PasteList";
-import { ProfilePanel } from "@/components/profile/ProfilePanel";
-import { RightRail } from "@/components/shell/RightRail";
-import { TopBar, type TopBarTab } from "@/components/shell/TopBar";
-import { RenderSurface } from "@/components/surface/RenderSurface";
-import { getHealth, rankPage } from "@/lib/client/api";
-import { useProfile } from "@/lib/client/store";
-import type {
-  DemoPage,
-  HealthResponse,
-  PageId,
-  RankMeta,
-  RankResponse,
-  SurfaceMode,
-} from "@/lib/client/types";
-import { BUILT_IN_PAGE_IDS, PAGES } from "@/lib/pages";
-
-const BUILT_IN_TABS: TopBarTab[] = BUILT_IN_PAGE_IDS.map((id) => ({
-  id,
-  label: PAGES[id].name,
-  count: PAGES[id].candidates.length,
-}));
+const STEPS = [
+  {
+    title: "Tell focal what you like",
+    body: "Chat about the bands, films, restaurants and brands you love. focal saves exact matches and asks when it isn't sure.",
+  },
+  {
+    title: "Browse as usual",
+    body: "On restaurant, hotel, film, music, book and shopping lists, the extension lifts the clear matches to the top and says why.",
+  },
+  {
+    title: "Stay in control",
+    body: "Every change is in your activity feed with undo. Pick sites to skip, approve hard rules, and export or delete everything.",
+  },
+];
 
 export default function Home() {
-  return <FocalApp />;
-}
-
-function FocalApp() {
-  const [pageId, setPageId] = useState<PageId>("tables");
-  const [pastePage, setPastePage] = useState<DemoPage | null>(null);
-  const [response, setResponse] = useState<RankResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [mode, setMode] = useState<SurfaceMode>("original");
-  const [health, setHealth] = useState<HealthResponse | null>(null);
-
-  const { profile, setProfile, reset } = useProfile();
-
-  const page: DemoPage | null = pageId === "paste" ? pastePage : PAGES[pageId];
-
-  const tabs: TopBarTab[] = [
-    ...BUILT_IN_TABS,
-    { id: "paste", label: "Paste", count: pastePage?.candidates.length ?? 0 },
-  ];
-
-  useEffect(() => {
-    getHealth()
-      .then(setHealth)
-      .catch(() => setHealth(null));
-  }, []);
-
-  function handlePageChange(id: PageId) {
-    setPageId(id);
-    setResponse(null);
-    setMode("original");
-    setError(null);
-  }
-
-  function handlePasteReady(next: DemoPage) {
-    setPastePage(next);
-    setResponse(null);
-    setMode("original");
-    setError(null);
-  }
-
-  const canFocus =
-    page !== null &&
-    page.candidates.length > 0 &&
-    profile.seeds.some((seed) => seed.polarity === "like") &&
-    !busy;
-
-  async function handleFocus() {
-    if (!canFocus || page === null) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const ranked = await rankPage({ page, profile });
-      setResponse(ranked);
-      setMode("focal");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Ranking failed");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  function handleReset() {
-    setResponse(null);
-    setMode("original");
-    setError(null);
-  }
-
-  function handleApplyAgent(result: {
-    ranked: RankedCandidate[];
-    plan: RenderPlan;
-    meta: RankMeta;
-  }) {
-    setResponse({ ranked: result.ranked, plan: result.plan, meta: result.meta });
-    setMode("focal");
-    setError(null);
-  }
-
+  // Without sign-in configured (local dev), onboarding runs for the dev viewer directly.
+  const start = authEnabled() ? "/sign-in?returnTo=%2Fonboarding" : "/onboarding";
   return (
-    <div className="flex min-h-dvh flex-col">
-      <TopBar
-        tabs={tabs}
-        pageId={pageId}
-        onPageChange={handlePageChange}
-        mode={mode}
-        onModeChange={setMode}
-        hasResponse={response !== null}
-        canFocus={canFocus}
-        busy={busy}
-        onFocus={() => void handleFocus()}
-        onReset={handleReset}
-        health={health}
-        seedCount={profile.seeds.length}
-      />
+    <>
+      <SiteHeader />
+      <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-14 px-4 py-16">
+        <section className="flex max-w-2xl flex-col gap-5">
+          <h1 className="text-4xl font-semibold tracking-tight text-ink sm:text-5xl">The web, rendered for you.</h1>
+          <p className="text-lg text-muted">
+            focal re-orders the lists you already browse so the things you care about come first. Same site, same data,
+            your ordering, powered by Qloo&apos;s taste graph.
+          </p>
+          <div className="flex flex-wrap gap-3">
+            <Link href={start} className={buttonVariants({ size: "lg" })}>
+              Get started
+            </Link>
+            <Link href="/try" className={buttonVariants({ variant: "outline", size: "lg" })}>
+              Try it without installing
+            </Link>
+          </div>
+        </section>
 
-      <main className="mx-auto grid w-full max-w-[1400px] gap-4 px-4 py-4 lg:grid-cols-[300px_minmax(0,1fr)_340px]">
-        <ProfilePanel profile={profile} onProfileChange={setProfile} />
-
-        <div className="flex min-w-0 flex-col gap-4">
-          {error !== null ? (
-            <div
-              role="alert"
-              className="rounded-lg border border-danger/40 bg-danger/10 px-4 py-3"
-            >
-              <p className="text-sm font-medium text-danger">{error}</p>
-              <p className="mt-1 text-xs text-muted">
-                Check that QLOO_API_KEY is set (or QLOO_MOCK=1 for local demo data).
-              </p>
-            </div>
-          ) : null}
-
-          {page !== null ? (
-            <RenderSurface page={page} response={response} mode={mode} busy={busy} />
-          ) : (
-            <PasteList onReady={handlePasteReady} />
-          )}
-        </div>
-
-        {page !== null ? (
-          <RightRail
-            page={page}
-            response={response}
-            error={error}
-            busy={busy}
-            profile={profile}
-            onProfileChange={setProfile}
-            onApply={handleApplyAgent}
-          />
-        ) : (
-          <aside className="flex min-w-0 flex-col gap-2 rounded-lg border border-line bg-surface p-4 lg:sticky lg:top-[76px] lg:self-start">
-            <h2 className="text-sm font-semibold text-ink">Inspector</h2>
-            <p className="text-xs text-muted">
-              Use your list to see exactly what focal.ai sent to Qloo and why each item moved.
-            </p>
-          </aside>
-        )}
+        <section aria-labelledby="how" className="flex flex-col gap-4">
+          <h2 id="how" className="text-sm font-medium uppercase tracking-wide text-muted">
+            How it works
+          </h2>
+          <ol className="grid gap-4 sm:grid-cols-3">
+            {STEPS.map((step, i) => (
+              <li key={step.title} className="flex flex-col gap-2 rounded-xl border border-line bg-surface p-5">
+                <span className="text-xs font-medium text-accent">Step {i + 1}</span>
+                <h3 className="text-base font-semibold text-ink">{step.title}</h3>
+                <p className="text-sm text-muted">{step.body}</p>
+              </li>
+            ))}
+          </ol>
+        </section>
       </main>
-    </div>
+    </>
   );
 }

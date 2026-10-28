@@ -175,6 +175,8 @@ export function ChatPanel({ email }: { email: string }) {
         placeholders={PLACEHOLDERS}
         onChange={(e) => setDraft(e.target.value)}
         onSubmit={() => void send(draft)}
+        label="Tell focal what you like"
+        submitLabel="Send message"
       />
     </section>
   );

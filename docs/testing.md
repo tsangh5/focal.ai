@@ -48,6 +48,8 @@ These fixtures are **not evidence of live API behavior**. Field names, the affin
 
 A green run means: the lockfile is in sync; all four packages typecheck (web includes `next typegen`); core 72 + qloo 46 + web 21 tests pass with no network access to Qloo and no secrets; the Studio production build compiles. CI does not run lint or the probe — run `pnpm lint` locally before opening a PR.
 
+A second job, `e2e`, runs the Playwright suite in `e2e/` (`pnpm e2e`) against a Postgres service: `next dev` with mock Qloo and Jev, fixture copies of Yelp, Letterboxd, Gmail and example.org, and the unpacked extension in Chromium. It needs no keys. On failure it uploads traces, screenshots and the server log as the `e2e-results` artifact. Details: [e2e/README.md](../e2e/README.md).
+
 ## 5. Wave verification gate
 
 The release-verifier procedure used before a wave is called done (all commands below were executed on this tree):
@@ -134,7 +136,7 @@ Not runnable yet (no deployment exists; the live path is blocked on the T-01 key
 
 ## 7. Known gaps
 
-- **No Playwright/e2e suite yet** (T-22). UI regressions are caught by manual QA plus the route tests; there is no automated browser journey.
+- **Browser tests run against mocks only.** `e2e/` covers the website, MCP and the extension with mock Qloo and Jev and placeholder WorkOS credentials; real sign-in, live Qloo and real sites are still checked by hand. Pages that call `notFound()` answer HTTP 200 with the not-found page, because the shell streams first (a `test.fixme` in `e2e/tests/dev/pages.spec.ts`).
 - **No live-API verification yet** — T-01 is blocked on the hackathon key. Every qloo fixture shape (affinity path, explainability, limits) is unverified until `pnpm probe` runs and `docs/qloo-contract.md` is filled.
 - **No CI lint step and no CI probe** — lint is a local pre-PR step; probe requires a key and never runs in CI.
 - **MCP server is a stub** (T-20): no protocol behavior to test yet.

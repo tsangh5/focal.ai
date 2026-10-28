@@ -29,8 +29,7 @@ cp apps/web/.env.example apps/web/.env.local
 | `QLOO_API_KEY` | web server (`@focal-ai/qloo` client), `pnpm probe` | Required for live data; not needed in mock mode | Server-only; sent upstream as `X-Api-Key`. Hackathon keys work only against the hackathon host. |
 | `QLOO_API_BASE` | same | No (default `https://hackathon.api.qloo.com`) | Override only if Qloo says otherwise. |
 | `QLOO_MOCK` | `@focal-ai/qloo` client and web `dataSource()` (`/api/health`) | No | Set `1` for labeled fixture data (local only). Never set in production. |
-| `FOCAL_DEV_SESSION` | `/api/page/{identify,rank,result}` | No | Set `1` locally: any bearer token resolves to a demo user and profile, and identification uses the mock identifier. Ignored when `NODE_ENV=production` (those routes return 401 until accounts land). |
-||||||| ce6103a
+| `FOCAL_DEV_SESSION` | page API, account pages and APIs (`/profile`, `/activity`, `/settings`, `/onboarding`, `/api/{profile,activity,settings,account,feedback}`) | No | Set `1` locally: with sign-in not configured, the website and any bearer token that isn't an `fx_` session act as the `dev@localhost` account (stored in the database when `DATABASE_URL` is set, in memory otherwise, seeded with Fugazi and Rintaro), and identification uses the mock identifier. Ignored when `NODE_ENV=production`. |
 | `DATABASE_URL` | `@focal-ai/db` (migrations via `pnpm --filter @focal-ai/db migrate`, tests) | Needed for DB tests; they skip when unset. CI runs a Postgres 17 service | Server-only. Local: Postgres 17 in Docker |
 | `WORKOS_CLIENT_ID`, `WORKOS_API_KEY`, `WORKOS_COOKIE_PASSWORD` (≥32 chars), `NEXT_PUBLIC_WORKOS_REDIRECT_URI` | sign-in (`/sign-in`, `/auth/callback`, `/connect`, `/api/extension/session`, `/api/chat`) | For accounts | Server-only except the redirect URI. Auth routes return 404 until client id, cookie password and redirect URI are set. |
 | `NEXT_PUBLIC_FOCAL_EXTENSION_ID` | `/connect` | For the session handoff | The extension id (`chrome://extensions`) that receives the session token. |
@@ -70,7 +69,7 @@ pnpm --filter @focal-ai/web start        # add -p 3210 if port 3000 is busy
 
 **Try the product** (works in mock or live):
 
-1. Open http://localhost:3000.
+1. Open http://localhost:3000/try (the landing page at `/` links to it as "Try it without installing").
 2. In the "Your taste" panel, search `Rintaro` (or `Fugazi`) and click **Add**; add 2–3 seeds. The picker hint offers "Try: Rintaro · Fugazi · Zuni Café".
 3. Click **Focus N results** on the Tables page.
 4. Toggle **Original / Focal / Diff** — Diff shows the moved/collapsed/avg strip and per-card delta arrows.
@@ -97,6 +96,7 @@ Root scripts (quoted exactly from `package.json`):
 | `pnpm lint` | `pnpm -r lint` | ESLint for web; `tsc --noEmit` for core/qloo/mcp |
 | `pnpm check` | `pnpm -r typecheck && pnpm -r test` | Pre-PR gate for types + tests (does not lint or build) |
 | `pnpm probe` | `tsx scripts/probe-qloo.ts` | Live Qloo contract probe (needs a key) |
+| `pnpm e2e` | `pnpm --filter @focal-ai/e2e e2e` | Playwright browser tests for the website, MCP and the extension. Needs Postgres and free ports 3000 and 4567. See [e2e/README.md](../e2e/README.md) |
 
 Per-package variants: `pnpm --filter @focal-ai/core test` (also `@focal-ai/qloo`, `@focal-ai/web`, `@focal-ai/mcp`), same for `typecheck`/`lint`. `pnpm -r <script>` runs the script across every workspace package that defines it (web + the three packages; the MCP test script exits 0 with no tests).
 

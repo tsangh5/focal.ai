@@ -16,7 +16,8 @@
     "check": "pnpm -r typecheck && pnpm -r test",
     "probe": "tsx scripts/probe-qloo.ts",
     "probe:unknowns": "tsx scripts/probe-unknowns.ts",
-    "smoke": "tsx scripts/smoke-prod.ts"
+    "smoke": "tsx scripts/smoke-prod.ts",
+    "e2e": "pnpm --filter @focal-ai/e2e e2e"
   },
   "devDependencies": {
     "@neon/config": "1.9.2",

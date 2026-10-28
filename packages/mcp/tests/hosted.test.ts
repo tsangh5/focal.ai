@@ -115,6 +115,16 @@ describe("hosted MCP server", () => {
     expect(commits.map((e) => e.action)).toEqual(["add", "remove"]);
   });
 
+  it("asks for a kind when a vibe and a rule share a name, then removes the one picked", async () => {
+    const { d, profile } = deps();
+    await call(d, "add_vibe", { vibe: "chain", strength: "dislike" });
+    await call(d, "propose_rule", { rule: "chain" });
+    const ambiguous = await call(d, "remove_entry", { name: "chain" });
+    expect(ambiguous.value).toMatchObject({ removed: false, choices: [{ kind: "vibe" }, { kind: "rule" }] });
+    expect((await call(d, "remove_entry", { name: "chain", kind: "rule" })).value).toMatchObject({ removed: true });
+    expect(profile().entries.map((e) => e.kind)).toEqual(["vibe"]);
+  });
+
   it("recommends things not already saved", async () => {
     const { d } = deps();
     await call(d, "add_thing", { name: "rintaro", type: "place", strength: "love" });

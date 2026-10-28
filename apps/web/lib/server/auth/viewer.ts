@@ -1,6 +1,7 @@
 import { getDb } from "../db";
 import { devSessionsEnabled } from "../page/session";
 import { authEnabled } from "./config";
+import { DEV_EMAIL, devAccount } from "./devAccount";
 import { ensureUser } from "./users";
 
 export interface Viewer {
@@ -20,6 +21,10 @@ export async function currentViewer(): Promise<Viewer | null> {
     const account = await ensureUser(db, { id: user.id, email: user.email });
     return { userId: account.id, email: user.email, persisted: true };
   }
-  if (devSessionsEnabled()) return { userId: "dev", email: "dev@localhost", persisted: false };
+  if (devSessionsEnabled()) {
+    // With a database, the dev viewer is a real account shared with the extension's dev session.
+    if (db) return { userId: (await devAccount(db)).id, email: DEV_EMAIL, persisted: true };
+    return { userId: "dev", email: DEV_EMAIL, persisted: false };
+  }
   return null;
 }

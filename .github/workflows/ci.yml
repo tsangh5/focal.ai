@@ -43,3 +43,45 @@ jobs:
         with:
           name: focal-extension
           path: apps/extension/focal-extension-*.zip
+
+  # Browser tests: the website, its APIs, MCP and the unpacked extension in Chromium (see e2e/README.md).
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: focal
+          POSTGRES_PASSWORD: focal
+          POSTGRES_DB: focal
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U focal"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://focal:focal@localhost:5432/focal
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.4.2
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @focal-ai/e2e exec playwright install --with-deps chromium
+      - run: pnpm e2e
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-results
+          path: |
+            e2e/test-results
+            e2e/playwright-report
+            e2e/.logs
+          retention-days: 7

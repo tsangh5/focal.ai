@@ -229,9 +229,10 @@ async function checkSecretHygiene(): Promise<void> {
   const name = "secret hygiene";
   const markers = ["X-Api-Key", "hackathon.api.qloo.com"];
   try {
-    const { status, raw } = await request("/");
+    // The Studio playground is the client-heaviest page, so scan its bundles.
+    const { status, raw } = await request("/try");
     if (status !== 200) {
-      fail(name, `GET / — HTTP ${status}`);
+      fail(name, `GET /try — HTTP ${status}`);
       return;
     }
 
@@ -256,7 +257,7 @@ async function checkSecretHygiene(): Promise<void> {
       }
     };
 
-    scan("/", raw);
+    scan("/try", raw);
     for (const url of sameOrigin) {
       try {
         const response = await fetch(url, { signal: AbortSignal.timeout(15000) });

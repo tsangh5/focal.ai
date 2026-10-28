@@ -163,8 +163,17 @@ export async function runProfileTool(ctx: ProfileToolContext, name: string, args
     case "remove_entry": {
       const target = str(args.name);
       if (!target) return { error: "missing name" };
-      const matches = ctx.getProfile().entries.filter((e) => normalizeName(e.name) === normalizeName(target));
-      if (matches.length !== 1) return { removed: false, choices: matches.map((m) => ({ name: m.name, kind: m.kind })) };
+      const kind = str(args.kind);
+      const matches = ctx
+        .getProfile()
+        .entries.filter((e) => normalizeName(e.name) === normalizeName(target) && (!kind || e.kind === kind));
+      if (matches.length !== 1) {
+        return {
+          removed: false,
+          choices: matches.map((m) => ({ name: m.name, kind: m.kind })),
+          ...(matches.length > 1 ? { instruction: "Several entries share this name; call remove_entry again with kind." } : {}),
+        };
+      }
       const { profile, event } = removeEntry(ctx.getProfile(), matches[0]!.id, ctx.actor);
       await ctx.commit(profile, event);
       ctx.events.push(event);

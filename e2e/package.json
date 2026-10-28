@@ -1,0 +1,20 @@
+{
+  "name": "@focal-ai/e2e",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "e2e": "playwright test -c playwright.dev.config.ts && playwright test -c playwright.auth.config.ts",
+    "e2e:dev": "playwright test -c playwright.dev.config.ts",
+    "e2e:auth": "playwright test -c playwright.auth.config.ts",
+    "typecheck": "tsc --noEmit",
+    "lint": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@focal-ai/db": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.32.1",
+    "@playwright/test": "1.56.1",
+    "@types/chrome": "^0.3.5",
+    "@types/node": "^26.6.5",
+    "typescript": "^7.0.2"
+  }
+}

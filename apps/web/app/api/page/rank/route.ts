@@ -38,7 +38,7 @@ export async function POST(req: Request): Promise<Response> {
       status: result.status,
       items: result.items,
       plan: result.plan,
-      meta: { ...result.meta, signals: result.signals, stats: result.stats, durationMs: Date.now() - startedAt },
+      meta: { ...result.meta, pageType: parsed.data.pageType, signals: result.signals, stats: result.stats, durationMs: Date.now() - startedAt },
     });
     return Response.json({ pageResultId, status: result.status, plan: result.plan });
   } catch (e) {

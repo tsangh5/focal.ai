@@ -1,6 +1,6 @@
 # Implementation tickets — focal.ai v2 (the extension)
 
-**Last status update:** 2026-10-20 — backlog created from [spec.md](./spec.md). See [status.md](./status.md) for the log.
+**Last status update:** 2026-10-28 — account pages, on-page feedback, infinite-scroll top-ups and the browser test suite landed (P-03, W-03, X-07, X-08, S-02; W-01 and M-01 in part). Other statuses were not re-checked. See [status.md](./status.md) for the log.
 
 **Deadline:** October 30, 2026, 11:45pm EDT (Qloo Agentic Hackathon). Target submission Oct 29.
 
@@ -47,7 +47,7 @@ Google and email-link sign-in on the website; an endpoint that issues the extens
 **Acceptance:** signed-in website session; the extension receives and refreshes a token without its own login screen.
 
 ### P-03 · Profile v2 and activity
-Status: [ ] · **P0** · Deps: P-01, P-02 · Owns: `packages/core/src/profile.ts`, `apps/web/app/api/profile/**`, `apps/web/app/api/activity/**`
+Status: [x] (2026-10-28: `/api/profile`, `/api/activity` with undo, `/api/account` export and delete; route tests and e2e) · **P0** · Deps: P-01, P-02 · Owns: `packages/core/src/profile.ts`, `apps/web/app/api/profile/**`, `apps/web/app/api/activity/**`
 Things, vibes and rules with strength (love / like / dislike / never) and source; pending rules; every write produces an ActivityEvent; undo restores the previous state. Export and delete account.
 **Acceptance:** API tests for add / remove / change / approve / undo and attribution; export returns the full profile JSON.
 
@@ -91,12 +91,12 @@ CSS order for flex / grid containers, node moves otherwise, re-apply on re-rende
 **Acceptance:** fixture pages for flex, grid and block lists reorder correctly; Undo restores the original DOM order; site click handlers still work after reordering.
 
 ### X-07 · Dynamic content
-Status: [ ] · **P0** · Deps: X-06 · Owns: `apps/extension/src/watch/**`
+Status: [x] (2026-10-28: top-ups label late matches in place and keep seen items still; the lifted section does not yet refresh off screen) · **P0** · Deps: X-06 · Owns: `apps/extension/src/watch/**`
 Infinite-scroll top-ups through the cache without Jev; labels in place for late matches; lifted section updates only off screen; SPA navigation and new searches treated as new pages.
 **Acceptance:** fixture with appended items never moves seen items; SPA route change triggers a fresh rank.
 
 ### X-08 · Labels and on-page feedback
-Status: [ ] · **P0** · Deps: X-06, P-03 · Owns: `apps/extension/src/labels/**`, `apps/web/app/api/feedback/**`
+Status: [x] (2026-10-28: More like this / Not for me on labels, `/api/feedback`, activity with undo) · **P0** · Deps: X-06, P-03 · Owns: `apps/extension/src/labels/**`, `apps/web/app/api/feedback/**`
 "Top pick for you" / "Good match" with "because you like …"; More like this / Not for me write likes and dislikes with activity events.
 **Acceptance:** labels never show invented reasons; a tap appears in the activity feed with undo.
 
@@ -105,7 +105,7 @@ Status: [ ] · **P0** · Deps: X-06, P-03 · Owns: `apps/extension/src/labels/**
 ## Wave W — website
 
 ### W-01 · Shell, onboarding flow
-Status: [ ] · **P0** · Deps: P-02 · Owns: `apps/web/app/(site)/**`
+Status: [ ] (2026-10-28: landing, `/onboarding` and failed-sign-in page built and covered in dev mode; a real new account end to end is not yet checked) · **P0** · Deps: P-02 · Owns: `apps/web/app/(site)/**`
 Landing, sign-in, onboarding (chat → sites to skip → install or confirm extension → "Try it now" links).
 **Acceptance:** a new account completes onboarding end to end; the extension shows as connected.
 
@@ -115,7 +115,7 @@ OpenAI-compatible provider chain with fallback on rate limits; lean context; too
 **Acceptance:** scripted chats produce correct entries; ambiguous names return choices; rules are created pending; provider failover tested.
 
 ### W-03 · Profile, activity and settings pages
-Status: [ ] · **P0** · Deps: P-03 · Owns: `apps/web/app/(site)/{profile,activity,settings}/**`
+Status: [x] (2026-10-28: `/profile`, `/activity`, `/settings`; e2e in `e2e/tests/dev/pages.spec.ts`) · **P0** · Deps: P-03 · Owns: `apps/web/app/(site)/{profile,activity,settings}/**`
 View and edit things, vibes and rules with strength; approve pending rules; activity with attribution and undo; sites to skip; export and delete.
 **Acceptance:** every action round-trips through the API and shows in the feed.
 
@@ -129,7 +129,7 @@ Status: [ ] · **P1** · Deps: X-05 · Owns: `apps/web/app/(site)/{why,try}/**`,
 ## Wave M — outside assistants
 
 ### M-01 · Hosted MCP with OAuth and write tools
-Status: [ ] · **P1** · Deps: V-04, P-03 · Owns: `packages/mcp/**`, `apps/web/app/mcp/**`
+Status: [ ] (2026-10-28: stdio server forwards to the hosted endpoint when `FOCAL_TOKEN` is set; ChatGPT and claude.ai not yet checked) · **P1** · Deps: V-04, P-03 · Owns: `packages/mcp/**`, `apps/web/app/mcp/**`
 HTTP transport with OAuth; tools from §5.10; ambiguity refusal; pending rules; attribution "via <assistant>"; stdio kept for local clients.
 **Acceptance:** ChatGPT and claude.ai connect and add an entry that appears in the feed with undo.
 
@@ -148,7 +148,7 @@ Policy matching §6 (what is sent when, third parties, retention, deletion); sto
 **Acceptance:** listing submitted; policy linked from the site and the listing.
 
 ### S-02 · End-to-end tests
-Status: [ ] · **P0** · Deps: X-06, W-01 · Owns: `e2e/**`
+Status: [x] (2026-10-28: `e2e/`, CI job `e2e`; mock Qloo, Jev and placeholder WorkOS) · **P0** · Deps: X-06, W-01 · Owns: `e2e/**`
 Playwright loads the unpacked extension against saved fixture pages with the server's Qloo and Jev calls mocked; covers guard, detect, identify, rank, apply, undo, feedback.
 **Acceptance:** green in CI with no network access.
 

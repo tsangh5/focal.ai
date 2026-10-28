@@ -137,8 +137,9 @@ export function createHostedServer(deps: HostedDeps): McpServer {
     "remove_entry",
     {
       title: "Remove from profile",
-      description: "Remove a thing, vibe or rule from the profile by its exact name. The user can undo this on the website.",
-      inputSchema: { name: z.string().min(1).max(200) },
+      description:
+        "Remove a thing, vibe or rule from the profile by its exact name. Pass kind when a thing, vibe and rule share a name. The user can undo this on the website.",
+      inputSchema: { name: z.string().min(1).max(200), kind: z.enum(["thing", "vibe", "rule"]).optional() },
       annotations: { readOnlyHint: false, destructiveHint: true },
     },
     (args) => run("remove_entry", args),

@@ -57,10 +57,14 @@ export function createDbPageResultStore(db: Db): PageResultStore {
 
 let store: PageResultStore | undefined;
 
+// Route handlers and pages load separate module instances in Next; keep the
+// in-memory fallback on globalThis so /why/<id> sees what /api/page/rank saved.
+const shared = globalThis as { __focalPageResults?: PageResultStore };
+
 export function getPageResultStore(): PageResultStore {
   if (store) return store;
   const db = getDb();
-  store = db ? createDbPageResultStore(db) : createMemoryPageResultStore();
+  store = db ? createDbPageResultStore(db) : (shared.__focalPageResults ??= createMemoryPageResultStore());
   return store;
 }
 

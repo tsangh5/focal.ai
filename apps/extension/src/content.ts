@@ -1,11 +1,12 @@
-import type { BackgroundReply, ContentMessage, IdentifyResponse, RankResponse } from "./api";
+import type { BackgroundReply, ContentMessage, FeedbackResponse, IdentifyResponse, RankResponse } from "./api";
 import { pathPattern } from "./api";
-import { applyPlan, type ApplyHandle } from "./apply/apply";
+import { applyPlan, type ApplyHandle, type ApplyOptions } from "./apply/apply";
 import { createGate } from "./apply/gate";
 import { FOCAL_HOSTS } from "./config";
 import { cityHints, detectList, snapshotCards, type DetectedList } from "./detect/detect";
 import { checkEligibility } from "./guards/eligibility";
 import { getSettings } from "./storage";
+import type { RenderOp, RenderPlan } from "./types";
 
 function send<T>(msg: ContentMessage): Promise<BackgroundReply<T>> {
   return chrome.runtime.sendMessage(msg);
@@ -19,14 +20,38 @@ const runTimes: number[] = [];
 let generation = 0;
 let lastList: { container: Element; cards: Set<Element> } | null = null;
 let last: { key: string; hints: string[] } | null = null;
-/** Lists that weren't worth ranking, with their size then; a new card makes them worth another look. */
 let rejected = new WeakMap<Element, number>();
+// After Undo, cards that load later stay untouched too.
+let userUndid = false;
+
+// Card ids stay with the element, so a card keeps its id when more load in.
+const cardIds = new WeakMap<Element, string>();
+let nextCardId = 0;
 
 const RERUN_DELAY_MS = 1000;
 const RERUN_MAX_WAIT_MS = 3000;
 const MAX_RUNS_PER_MINUTE = 6;
 
-/** Sorting, infinite scroll and in-app navigation change the list after load; rank it again. */
+function idFor(el: Element): string {
+  let id = cardIds.get(el);
+  if (!id) {
+    id = `c${nextCardId++}`;
+    cardIds.set(el, id);
+  }
+  return id;
+}
+
+function withStableIds(list: DetectedList): DetectedList {
+  return { ...list, cards: new Map([...list.cards.values()].map((el) => [idFor(el), el])) };
+}
+
+/** Same container, and every card from the last run is still there: more items loaded in. */
+function isTopUp(list: DetectedList): boolean {
+  if (!lastList || list.container !== lastList.container) return false;
+  const now = new Set(list.cards.values());
+  return now.size > lastList.cards.size && [...lastList.cards].every((el) => now.has(el));
+}
+
 function scheduleRerun(): void {
   const now = Date.now();
   if (rerunTimer === undefined) firstScheduledAt = now;
@@ -41,6 +66,7 @@ function scheduleRerun(): void {
     if (!list || sameList(list) || rejected.get(list.container) === list.cards.size) return;
     watcher?.disconnect();
     watcher = null;
+    if (isTopUp(list)) return void run(undefined, true);
     current?.undo();
     current = null;
     void run(0);
@@ -56,16 +82,18 @@ function watch(container: Element, cards: Iterable<Element>): void {
   const known = new Set(cards);
   watcher?.disconnect();
   watcher = new MutationObserver((records) => {
-    const fresh = records.some((r) =>
-      [...r.addedNodes].some((n) => n.nodeType === 1 && !known.has(n as Element) && !(n as Element).hasAttribute("data-focal")),
+    const added = records.flatMap((r) =>
+      [...r.addedNodes].filter((n): n is Element => n.nodeType === 1 && !known.has(n as Element) && !(n as Element).hasAttribute("data-focal")),
     );
-    if (fresh || !container.isConnected) scheduleRerun();
+    // Keep freshly appended cards after the lifted ones right away; labels follow on the top-up.
+    const fresh = added.filter((el) => el.parentElement === container);
+    if (fresh.length > 0 && current?.active) current.extend([], new Map(fresh.map((el) => [idFor(el), el])));
+    if (added.length > 0 || !container.isConnected) scheduleRerun();
   });
   watcher.observe(container, { childList: true });
   if (container.parentElement) watcher.observe(container.parentElement, { childList: true });
 }
 
-/** No rankable list yet (still loading, or the wrong group was found): look again when the page changes. */
 function watchPage(): void {
   watcher?.disconnect();
   watcher = new MutationObserver((records) => {
@@ -79,8 +107,24 @@ function reject(list: DetectedList): void {
   watchPage();
 }
 
-/** guards → list detection → identify → rank → apply (§4.1). */
-async function run(gateMs?: number): Promise<void> {
+/**
+ * The part of a fresh plan that touches only newly loaded cards: their labels,
+ * highlights and folds. Reorders are dropped, so nothing already seen moves.
+ */
+function topUpOps(plan: RenderPlan, fresh: Set<string>): RenderOp[] {
+  const ops: RenderOp[] = [];
+  for (const op of plan.ops) {
+    if (op.op === "annotate" || op.op === "emphasize") {
+      if (fresh.has(op.clientId)) ops.push(op);
+    } else if (op.op === "collapse" || op.op === "hide") {
+      const clientIds = op.clientIds.filter((id) => fresh.has(id));
+      if (clientIds.length > 0) ops.push({ ...op, clientIds, ...(op.op === "collapse" ? { label: op.label.replace(/^\d+/, String(clientIds.length)) } : {}) });
+    }
+  }
+  return ops;
+}
+
+async function run(gateMs?: number, topUp = false): Promise<void> {
   runTimes.push(Date.now());
   const gen = ++generation;
   const settings = await getSettings();
@@ -93,18 +137,20 @@ async function run(gateMs?: number): Promise<void> {
   });
   if (!eligibility.eligible) return;
 
-  const list = detectList(document);
-  if (!list) return watchPage();
+  const detected = detectList(document);
+  if (!detected) return watchPage();
+  const list = withStableIds(detected);
+  const seen = topUp ? (lastList?.cards ?? new Set<Element>()) : new Set<Element>();
   lastList = { container: list.container, cards: new Set(list.cards.values()) };
   watch(list.container, list.cards.values());
 
   const cards = snapshotCards(list);
   // Apps can change the URL (and its search box) before swapping the list; cards keep the context they came with.
   const key = cards.map((c) => c.snippets[0] ?? "").sort().join("\n");
-  const hints = last?.key === key ? last.hints : cityHints(document);
+  const hints = topUp && last ? last.hints : last?.key === key ? last.hints : cityHints(document);
   last = { key, hints };
 
-  const gate = createGate(list.container as HTMLElement, gateMs);
+  const gate = topUp ? null : createGate(list.container as HTMLElement, gateMs);
   const host = location.hostname.replace(/^www\./, "");
   const pattern = pathPattern(location.pathname);
 
@@ -112,10 +158,10 @@ async function run(gateMs?: number): Promise<void> {
     type: "identify",
     body: { host, pathPattern: pattern, signature: list.signature, cityHints: hints, cards },
   });
-  if (gen !== generation) return gate.cancel();
+  if (gen !== generation) return gate?.cancel();
   if (!identified.ok || !identified.data.isList || !identified.data.pageType || identified.data.items.length === 0) {
-    gate.cancel();
-    if (identified.ok) reject(list);
+    gate?.cancel();
+    if (identified.ok && !topUp) reject(list);
     return;
   }
 
@@ -123,18 +169,40 @@ async function run(gateMs?: number): Promise<void> {
     type: "rank",
     body: { host, pathPattern: pattern, pageType: identified.data.pageType, items: identified.data.items },
   });
-  if (gen !== generation) return gate.cancel();
+  if (gen !== generation) return gate?.cancel();
   if (!ranked.ok || !ranked.data.plan) {
-    gate.cancel();
+    gate?.cancel();
     return;
   }
   const { plan, pageResultId } = ranked.data;
-  gate.ready(() => {
+  const options: ApplyOptions = {
+    onUndo: () => {
+      userUndid = true;
+    },
+    ...(pageResultId && {
+      onWhy: () => void send({ type: "open-why", pageResultId }),
+      onFeedback: async (clientId, verdict) => {
+        const reply = await send<FeedbackResponse>({ type: "feedback", body: { pageResultId, clientId, verdict } });
+        return reply.ok && reply.data.saved;
+      },
+    }),
+  };
+
+  if (topUp) {
+    if (userUndid) return;
+    const fresh = new Map([...list.cards].filter(([, el]) => !seen.has(el)));
+    const ops = topUpOps(plan, new Set(fresh.keys()));
+    if (current?.active) current.extend(ops, fresh);
+    else if (ops.length > 0) current = applyPlan(list, { ...plan, ops }, options);
+    if (pageResultId && current) void send({ type: "page-result", pageResultId, lifted: current.lifted });
+    return;
+  }
+
+  gate!.ready(() => {
     if (gen !== generation) return;
     current?.undo();
-    current = applyPlan(list, plan, {
-      onWhy: pageResultId ? () => void send({ type: "open-why", pageResultId }) : undefined,
-    });
+    userUndid = false;
+    current = applyPlan(list, plan, options);
     if (pageResultId) void send({ type: "page-result", pageResultId, lifted: current.lifted });
   });
 }
