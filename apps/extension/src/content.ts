@@ -5,6 +5,8 @@ import { createGate } from "./apply/gate";
 import { FOCAL_HOSTS } from "./config";
 import { cityHints, detectList, snapshotCards, type DetectedList } from "./detect/detect";
 import { checkEligibility } from "./guards/eligibility";
+import { applyLayout } from "./layouts/apply";
+import { deleteLayout, getLayout, layoutKey, saveLayout } from "./layouts/store";
 import { getSettings } from "./storage";
 import type { RenderOp, RenderPlan } from "./types";
 
@@ -124,6 +126,15 @@ function topUpOps(plan: RenderPlan, fresh: Set<string>): RenderOp[] {
   return ops;
 }
 
+/**
+ * A rank on a stored layout that resolved nothing means the layout names the
+ * wrong snippets. A lookup-budget skip, or a profile with no signals, never got
+ * that far; an older server that doesn't report the count can't tell us.
+ */
+function shouldInvalidateLayout(res: RankResponse): boolean {
+  return res.resolvedCount === 0 && !res.resolutionLimited && res.status !== "no_signals";
+}
+
 async function run(gateMs?: number, topUp = false): Promise<void> {
   runTimes.push(Date.now());
   const gen = ++generation;
@@ -153,22 +164,30 @@ async function run(gateMs?: number, topUp = false): Promise<void> {
   const gate = topUp ? null : createGate(list.container as HTMLElement, gateMs);
   const host = location.hostname.replace(/^www\./, "");
   const pattern = pathPattern(location.pathname);
+  const layoutId = layoutKey(host, pattern, list.signature);
 
-  const identified = await send<IdentifyResponse>({
-    type: "identify",
-    body: { host, pathPattern: pattern, signature: list.signature, cityHints: hints, cards },
-  });
+  // A known layout names the cards here: no identify call, and no snippets leave the page.
+  const layout = await getLayout(layoutId);
+  const local = layout && applyLayout(layout, cards, hints);
+  const identified: BackgroundReply<IdentifyResponse> = local
+    ? { ok: true, data: local }
+    : await send<IdentifyResponse>({
+        type: "identify",
+        body: { host, pathPattern: pattern, signature: list.signature, cityHints: hints, cards },
+      });
   if (gen !== generation) return gate?.cancel();
   if (!identified.ok || !identified.data.isList || !identified.data.pageType || identified.data.items.length === 0) {
     gate?.cancel();
     if (identified.ok && !topUp) reject(list);
     return;
   }
+  if (identified.data.layout) void saveLayout(layoutId, identified.data.layout);
 
   const ranked = await send<RankResponse>({
     type: "rank",
     body: { host, pathPattern: pattern, pageType: identified.data.pageType, items: identified.data.items },
   });
+  if (local && ranked.ok && shouldInvalidateLayout(ranked.data)) void deleteLayout(layoutId);
   if (gen !== generation) return gate?.cancel();
   if (!ranked.ok || !ranked.data.plan) {
     gate?.cancel();
