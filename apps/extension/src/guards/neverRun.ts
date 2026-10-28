@@ -2,7 +2,7 @@
  * Built-in never-run list (§5.1). Not user-configurable. Bump the version when
  * the list changes so cached copies in chrome.storage can be compared.
  */
-export const NEVER_RUN_VERSION = 3;
+export const NEVER_RUN_VERSION = 4;
 
 export type NeverRunCategory =
   | "banking"
@@ -90,6 +90,13 @@ const SITES: Record<Exclude<NeverRunCategory, "focal">, string[]> = {
  */
 const GOOGLE_HOST = /(^|\.)google(\.[a-z]{2,3}){1,2}$/;
 
+/**
+ * focal's own Vercel deployments, including per-branch preview URLs
+ * (`focal-ai-git-main-bens-projects.vercel.app`). Narrow on purpose: other
+ * people's vercel.app apps are ordinary sites and stay rankable.
+ */
+const FOCAL_DEPLOYMENT = /^focal-ai(-[a-z0-9-]+)?\.vercel\.app$/;
+
 const GOV_SUFFIX = /(^|\.)(gov|mil)(\.[a-z]{2})?$|(^|\.)gouv\.[a-z]{2}$|(^|\.)gob\.[a-z]{2}$|(^|\.)gc\.ca$|(^|\.)bund\.de$/;
 const BANK_LABEL = /(^|[.-])[a-z0-9]*bank(ing)?[a-z0-9]*\./;
 const HEALTH_LABEL = /(^|\.)(mychart|patient(portal)?|myhealth)[.-]/;
@@ -111,6 +118,7 @@ function suffixMatch(host: string, site: string): boolean {
 export function matchNeverRun(url: URL, focalHosts: string[] = []): NeverRunCategory | null {
   const host = url.hostname.toLowerCase().replace(/^www\./, "");
   if (focalHosts.some((f) => suffixMatch(host, f.toLowerCase().replace(/^www\./, "")))) return "focal";
+  if (FOCAL_DEPLOYMENT.test(host)) return "focal";
   for (const [category, sites] of Object.entries(SITES) as [NeverRunCategory, string[]][]) {
     if (sites.some((s) => suffixMatch(host, s))) return category;
   }

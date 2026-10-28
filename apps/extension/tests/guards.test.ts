@@ -33,6 +33,20 @@ describe("never-run list", () => {
     expect(matchNeverRun(new URL("https://app.focal.ai/profile"), ["focal.ai"])).toBe("focal");
   });
 
+  // A local build bakes in localhost, so the deployed site has to match on its
+  // own, without being passed in as a focalHost.
+  it.each([
+    "https://focal-ai.vercel.app/profile",
+    "https://focal-ai-git-main-bens-projects.vercel.app/chat",
+    "https://focal-ai-abc123.vercel.app/",
+  ])("blocks focal's deployment %s with no focalHosts", (url) => {
+    expect(matchNeverRun(new URL(url))).toBe("focal");
+  });
+
+  it("leaves other vercel.app sites rankable", () => {
+    expect(matchNeverRun(new URL("https://someone-else.vercel.app/list"))).toBeNull();
+  });
+
   // A chat transcript is as sensitive as email, and its turns look like a card list.
   it.each([
     ["https://claude.ai/chat/abc", "assistant"],
