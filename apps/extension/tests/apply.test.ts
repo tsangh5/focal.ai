@@ -1,6 +1,6 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { JSDOM } from "jsdom";
-import { applyPlan } from "../src/apply/apply";
+import { __setTrustCheckForTests, applyPlan, focalClickTrusted } from "../src/apply/apply";
 import { detectList } from "../src/detect/detect";
 import type { RenderPlan, RenderOp } from "../src/types";
 import { BOOK_LIST, RESTAURANT_GRID } from "./fixtures";
@@ -18,6 +18,10 @@ const plan = (ops: RenderOp[], lifted = 1): RenderPlan => ({
 const titles = (els: Iterable<Element>) => [...els].map((el) => el.querySelector("h3, b")?.textContent ?? el.className);
 
 describe("applyPlan", () => {
+  // jsdom's .click() is untrusted, so these tests bypass the trust check.
+  beforeEach(() => __setTrustCheckForTests(() => true));
+  afterEach(() => __setTrustCheckForTests(undefined));
+
   it("uses CSS order for grid containers without moving nodes", () => {
     const d = page(RESTAURANT_GRID);
     const list = detectList(d)!;
@@ -194,5 +198,195 @@ describe("applyPlan", () => {
     root.querySelector<HTMLButtonElement>('button[data-verdict="less"]')!.click();
     await vi.waitFor(() => expect(root.querySelector('[role="status"]')!.textContent).toBe("Couldn't save, try again"));
     expect([...root.querySelectorAll("button")].every((b) => !b.disabled)).toBe(true);
+  });
+});
+
+// jsdom has no layout: every rect is zero and elementsFromPoint is missing, so tests stub both.
+const rect = (left: number, top: number, width: number, height: number) =>
+  ({ left, top, width, height, right: left + width, bottom: top + height, x: left, y: top, toJSON: () => ({}) }) as DOMRect;
+const fakeClick = (button: Element, init: { isTrusted?: boolean; detail?: number; clientX?: number; clientY?: number } = {}) =>
+  ({ isTrusted: true, detail: 1, clientX: 30, clientY: 20, currentTarget: button, target: button, ...init }) as unknown as MouseEvent;
+/** Hands a dispatched (untrusted) jsdom click to the real check as if the browser had made it. */
+const realCheckOnTrustedCopy = (ev: Event, host: Element) => {
+  const m = ev as MouseEvent;
+  return focalClickTrusted(fakeClick(m.currentTarget as Element, { detail: m.detail, clientX: m.clientX, clientY: m.clientY }), host);
+};
+
+describe("focalClickTrusted", () => {
+  function setup(html = '<div id="host"><button id="b">Undo</button></div>') {
+    const d = page(html);
+    const host = d.getElementById("host")!;
+    const button = d.getElementById("b")!;
+    host.getBoundingClientRect = () => rect(0, 0, 300, 40);
+    button.getBoundingClientRect = () => rect(10, 8, 80, 24);
+    d.elementsFromPoint = () => [button, host, d.body, d.documentElement];
+    return { d, host, button };
+  }
+
+  it("rejects untrusted events however the button looks", () => {
+    const { host, button } = setup();
+    expect(focalClickTrusted(fakeClick(button, { isTrusted: false }), host)).toBe(false);
+    expect(focalClickTrusted(fakeClick(button, { isTrusted: false, detail: 0 }), host)).toBe(false);
+  });
+
+  it("accepts trusted keyboard and assistive-tech activation (detail 0) without geometry", () => {
+    const { d, host, button } = setup();
+    d.elementsFromPoint = () => [];
+    host.getBoundingClientRect = () => rect(500, 500, 10, 10);
+    expect(focalClickTrusted(fakeClick(button, { detail: 0, clientX: 0, clientY: 0 }), host)).toBe(true);
+  });
+
+  it("accepts a trusted pointer click on the topmost, visible button inside its host", () => {
+    const { host, button } = setup();
+    expect(focalClickTrusted(fakeClick(button), host)).toBe(true);
+  });
+
+  it("rejects a pointer click when something else is topmost at the point", () => {
+    const { d, host, button } = setup();
+    const overlay = d.createElement("div");
+    d.body.append(overlay);
+    d.elementsFromPoint = () => [overlay, button, host];
+    expect(focalClickTrusted(fakeClick(button), host)).toBe(false);
+    d.elementsFromPoint = () => [];
+    expect(focalClickTrusted(fakeClick(button), host)).toBe(false);
+  });
+
+  it("accepts a click whose topmost element is inside the button", () => {
+    const { d, host, button } = setup('<div id="host"><button id="b"><span>Undo</span></button></div>');
+    d.elementsFromPoint = () => [button.firstElementChild!, button, host];
+    expect(focalClickTrusted(fakeClick(button), host)).toBe(true);
+  });
+
+  it("rejects a button under a visibility:hidden ancestor", () => {
+    const { host, button } = setup('<section style="visibility:hidden"><div id="host"><button id="b">Undo</button></div></section>');
+    expect(focalClickTrusted(fakeClick(button), host)).toBe(false);
+  });
+
+  it("rejects a button whose ancestors multiply out to opacity 0.1 or less", () => {
+    const faint = setup('<div style="opacity:0.3"><div id="host" style="opacity:0.3"><button id="b">Undo</button></div></div>');
+    expect(focalClickTrusted(fakeClick(faint.button), faint.host)).toBe(false);
+    const clear = setup('<div style="opacity:0.5"><div id="host"><button id="b">Undo</button></div></div>');
+    expect(focalClickTrusted(fakeClick(clear.button), clear.host)).toBe(true);
+    const hidden = setup('<div id="host"><button id="b" style="opacity:0">Undo</button></div>');
+    expect(focalClickTrusted(fakeClick(hidden.button), hidden.host)).toBe(false);
+  });
+
+  it("rejects a button moved outside its host, allowing 4 px of slack", () => {
+    const { host, button } = setup();
+    button.getBoundingClientRect = () => rect(296, -4, 8, 8); // right edge at host.right + 4
+    expect(focalClickTrusted(fakeClick(button), host)).toBe(true);
+    button.getBoundingClientRect = () => rect(297, 8, 8, 8); // right edge at host.right + 5
+    expect(focalClickTrusted(fakeClick(button), host)).toBe(false);
+    button.getBoundingClientRect = () => rect(10, 400, 80, 24);
+    expect(focalClickTrusted(fakeClick(button), host)).toBe(false);
+  });
+
+  it("hit-tests a shadow-root button in its own tree and checks ancestors past the shadow host", () => {
+    const d = page('<div id="card"><focal-label id="host"></focal-label></div>');
+    const host = d.getElementById("host")!;
+    const root = host.attachShadow({ mode: "open" });
+    root.innerHTML = '<span><button id="b">More like this</button></span>';
+    const button = root.getElementById("b")!;
+    host.getBoundingClientRect = () => rect(0, 0, 300, 40);
+    button.getBoundingClientRect = () => rect(10, 8, 100, 22);
+    // What Chrome reports: the document sees only the shadow host, the shadow root sees the button.
+    d.elementsFromPoint = () => [host, d.getElementById("card")!, d.body];
+    root.elementsFromPoint = () => [button, root.firstElementChild!, host];
+    expect(focalClickTrusted(fakeClick(button), host)).toBe(true);
+    d.getElementById("card")!.style.opacity = "0";
+    expect(focalClickTrusted(fakeClick(button), host)).toBe(false);
+  });
+});
+
+describe("injected buttons ignore fake and hijacked clicks", () => {
+  afterEach(() => __setTrustCheckForTests(undefined));
+
+  const fullPlan = () =>
+    plan([
+      { op: "reorder", containerId: "x", order: ["c3", "c0", "c1", "c2", "c4"] },
+      { op: "annotate", containerId: "x", clientId: "c3", text: "Top pick for you", badge: "top-pick" },
+      { op: "collapse", containerId: "x", clientIds: ["c4"], label: "1 hidden by your rules" },
+    ]);
+
+  function render() {
+    const d = page(BOOK_LIST);
+    const list = detectList(d)!;
+    const onWhy = vi.fn();
+    const onUndo = vi.fn();
+    const onFeedback = vi.fn(async () => true);
+    const handle = applyPlan(list, fullPlan(), { onWhy, onUndo, onFeedback });
+    const label = d.querySelector<HTMLElement>('[data-focal="label"]')!;
+    const fold = d.querySelector<HTMLElement>('[data-focal="fold"]')!;
+    const strip = d.querySelector<HTMLElement>('[data-focal="strip"]')!;
+    const button = (sel: string) => (label.shadowRoot!.querySelector<HTMLButtonElement>(sel) ?? d.querySelector<HTMLButtonElement>(sel))!;
+    return { d, list, handle, onWhy, onUndo, onFeedback, label, fold, strip, button };
+  }
+
+  it("synthetic clicks do nothing on More like this, Not for me, Show, Why and Undo", async () => {
+    const r = render();
+    for (const sel of ['button[data-verdict="more"]', 'button[data-verdict="less"]', '[data-focal="show"]', '[data-focal="why"]', '[data-focal="undo"]']) {
+      r.button(sel).click();
+      r.button(sel).dispatchEvent(new r.d.defaultView!.MouseEvent("click", { bubbles: true, detail: 1, clientX: 20, clientY: 20 }));
+    }
+    await Promise.resolve();
+    expect(r.onFeedback).not.toHaveBeenCalled();
+    expect(r.onWhy).not.toHaveBeenCalled();
+    expect(r.onUndo).not.toHaveBeenCalled();
+    expect(r.handle.active).toBe(true);
+    expect(r.d.querySelector('[data-focal="fold"]')).not.toBeNull();
+    expect((r.list.cards.get("c4") as HTMLElement).style.display).toBe("none");
+  });
+
+  it("each button checks against the focal element that visually contains it", () => {
+    const r = render();
+    const named = new Map<Element, string>([
+      [r.label, "label"],
+      [r.fold, "fold"],
+      [r.strip, "strip"],
+    ]);
+    const hosts: string[] = [];
+    __setTrustCheckForTests((ev, host) => {
+      const button = ev.currentTarget as Element;
+      hosts.push(`${button.getAttribute("data-verdict") ?? button.getAttribute("data-focal")} → ${named.get(host) ?? host.tagName}`);
+      return false;
+    });
+    for (const sel of ['button[data-verdict="more"]', 'button[data-verdict="less"]', '[data-focal="show"]', '[data-focal="why"]', '[data-focal="undo"]']) r.button(sel).click();
+    expect(hosts).toEqual(["more → label", "less → label", "show → fold", "why → strip", "undo → strip"]);
+  });
+
+  it("a real-looking click on a label button inside its label goes through; one outside it does not", async () => {
+    const r = render();
+    __setTrustCheckForTests(realCheckOnTrustedCopy);
+    const more = r.button('button[data-verdict="more"]');
+    r.label.getBoundingClientRect = () => rect(0, 0, 300, 60);
+    more.getBoundingClientRect = () => rect(10, 30, 100, 22);
+    r.label.shadowRoot!.elementsFromPoint = () => [more];
+    const click = () => more.dispatchEvent(new r.d.defaultView!.MouseEvent("click", { bubbles: true, cancelable: true, detail: 1, clientX: 30, clientY: 40 }));
+
+    more.getBoundingClientRect = () => rect(10, 300, 100, 22); // dragged out of the label
+    click();
+    expect(r.onFeedback).not.toHaveBeenCalled();
+
+    more.getBoundingClientRect = () => rect(10, 30, 100, 22);
+    click();
+    expect(r.onFeedback).toHaveBeenCalledWith("c3", "more");
+  });
+
+  it("a real-looking click on the strip's Undo goes through unless an overlay covers it", () => {
+    const r = render();
+    __setTrustCheckForTests(realCheckOnTrustedCopy);
+    const undo = r.button('[data-focal="undo"]');
+    r.strip.getBoundingClientRect = () => rect(0, 0, 600, 44);
+    undo.getBoundingClientRect = () => rect(500, 8, 60, 28);
+    const click = () => undo.dispatchEvent(new r.d.defaultView!.MouseEvent("click", { bubbles: true, detail: 1, clientX: 520, clientY: 20 }));
+
+    r.d.elementsFromPoint = () => [r.d.body];
+    click();
+    expect(r.handle.active).toBe(true);
+
+    r.d.elementsFromPoint = () => [undo, r.strip];
+    click();
+    expect(r.handle.active).toBe(false);
+    expect(r.onUndo).toHaveBeenCalledOnce();
   });
 });

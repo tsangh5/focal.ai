@@ -1,3 +1,4 @@
+import { focalTrusted } from "./apply";
 import { blockAnchor, decorate } from "./ui";
 
 export const GATE_MS = 300;
@@ -83,12 +84,14 @@ export function createGate(container: HTMLElement, ms = GATE_MS): RenderGate {
       }
       detach();
       if (chip) {
+        const host = chip;
         chip.textContent = "focal found matches";
         const button = doc.createElement("button");
         button.type = "button";
         button.setAttribute("data-focal", "apply");
         button.textContent = "Apply";
-        button.addEventListener("click", () => {
+        button.addEventListener("click", (event) => {
+          if (!focalTrusted(event, host)) return;
           chip?.remove();
           apply();
         });

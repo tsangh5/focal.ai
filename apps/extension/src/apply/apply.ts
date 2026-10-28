@@ -28,6 +28,58 @@ export interface ApplyHandle {
   readonly active: boolean;
 }
 
+type TrustCheck = (ev: Event, host: Element) => boolean;
+
+/** The element `el` is drawn inside: its slot when slotted, else its parent, stepping out of shadow roots to their host. */
+function renderedParent(el: Element): Element | null {
+  return el.assignedSlot ?? el.parentElement ?? (el.parentNode as ShadowRoot | null)?.host ?? null;
+}
+
+/**
+ * True for a real click on a button focal put on the page; false for a
+ * synthetic one (page script calling .click() or dispatchEvent) or a hijacked
+ * one. Keyboard and assistive-tech activation (detail 0) only needs isTrusted.
+ * A pointer click also needs the button topmost at the click point, no hidden
+ * or near-transparent ancestor, and the button inside `host`, the focal
+ * element that visually contains it (±4 px).
+ */
+export function focalClickTrusted(ev: Event, host: Element): boolean {
+  if (ev.isTrusted !== true) return false;
+  const { detail, clientX, clientY } = ev as MouseEvent;
+  if (detail === 0) return true;
+  const button = (ev.currentTarget ?? ev.target) as Element | null;
+  const view = button?.ownerDocument?.defaultView;
+  if (!button || button.nodeType !== 1 || !view || !Number.isFinite(clientX) || !Number.isFinite(clientY)) return false;
+  // Hit-test in the button's own tree: for a button in a shadow root (label
+  // feedback) the document only reports the shadow host.
+  const scope = button.getRootNode() as Document | ShadowRoot;
+  const top = typeof scope.elementsFromPoint === "function" ? scope.elementsFromPoint(clientX, clientY)[0] : undefined;
+  if (!top || !button.contains(top)) return false;
+  let opacity = 1;
+  for (let el: Element | null = button; el; el = renderedParent(el)) {
+    const style = view.getComputedStyle(el);
+    if (style.visibility === "hidden") return false;
+    const own = parseFloat(style.opacity);
+    if (!Number.isNaN(own)) opacity *= own;
+  }
+  if (opacity <= 0.1) return false;
+  const b = button.getBoundingClientRect();
+  const h = host.getBoundingClientRect();
+  return b.left >= h.left - 4 && b.top >= h.top - 4 && b.right <= h.right + 4 && b.bottom <= h.bottom + 4;
+}
+
+let trustCheck: TrustCheck = focalClickTrusted;
+
+/** Every injected button's click handler asks this first and does nothing when it says no. */
+export function focalTrusted(ev: Event, host: Element): boolean {
+  return trustCheck(ev, host);
+}
+
+/** Tests only: jsdom can't make trusted clicks, so swap the check; undefined restores the real one. */
+export function __setTrustCheckForTests(fn: TrustCheck | undefined): void {
+  trustCheck = fn ?? focalClickTrusted;
+}
+
 function isFlexOrGrid(el: Element): boolean {
   const view = el.ownerDocument.defaultView;
   const display = view?.getComputedStyle(el).display ?? (el as HTMLElement).style.display;
@@ -134,7 +186,8 @@ const FEEDBACK_TEXT: Record<Verdict, { label: string; done: string }> = {
   less: { label: "Not for me", done: "Saved · not for you" },
 };
 
-function feedbackButtons(doc: Document, onFeedback: (verdict: Verdict) => Promise<boolean>, compact: boolean): HTMLElement {
+/** `host` is the label the buttons sit in, the box a real click has to land inside. */
+function feedbackButtons(doc: Document, host: HTMLElement, onFeedback: (verdict: Verdict) => Promise<boolean>, compact: boolean): HTMLElement {
   const row = doc.createElement("span");
   row.setAttribute("style", "display:inline-flex;align-items:center;flex-wrap:wrap;gap:0;vertical-align:middle");
   const status = doc.createElement("span");
@@ -152,6 +205,7 @@ function feedbackButtons(doc: Document, onFeedback: (verdict: Verdict) => Promis
       // The label sits inside the site's card, which is often a link.
       event.preventDefault();
       event.stopPropagation();
+      if (!focalTrusted(event, host)) return;
       for (const other of buttons) other.disabled = true;
       void onFeedback(verdict).then((saved) => {
         if (saved) {
@@ -193,7 +247,7 @@ function labelElement(
   span.append(doc.createTextNode(compact ? (text.split(" · ")[0] ?? text) : text));
   if (compact) span.title = text;
   root.append(span);
-  if (onFeedback) root.append(feedbackButtons(doc, onFeedback, compact));
+  if (onFeedback) root.append(feedbackButtons(doc, host, onFeedback, compact));
   // width:0 + min-width:100% fills the card without letting the label's text widen it.
   host.setAttribute("style", "all:initial;display:block;width:0;min-width:100%");
   popIn(span);
@@ -258,7 +312,8 @@ export function applyPlan(target: ApplyTarget, plan: RenderPlan, opts: ApplyOpti
       if (op.op === "collapse") {
         const show = make(doc, "button", "show", "Show");
         show.setAttribute("type", "button");
-        show.addEventListener("click", () => {
+        show.addEventListener("click", (event) => {
+          if (!focalTrusted(event, fold)) return;
           for (const el of els) el.style.removeProperty("display");
           holder.remove();
         });
@@ -343,12 +398,18 @@ export function applyPlan(target: ApplyTarget, plan: RenderPlan, opts: ApplyOpti
     if (opts.onWhy) {
       const why = make(doc, "button", "why", "Why this order?");
       why.setAttribute("type", "button");
-      why.addEventListener("click", () => opts.onWhy?.());
+      why.addEventListener("click", (event) => {
+        if (!focalTrusted(event, el)) return;
+        opts.onWhy?.();
+      });
       el.append(why);
     }
     const undo = make(doc, "button", "undo", "Undo");
     undo.setAttribute("type", "button");
-    undo.addEventListener("click", () => handle.undo());
+    undo.addEventListener("click", (event) => {
+      if (!focalTrusted(event, el)) return;
+      handle.undo();
+    });
     el.append(undo);
     inserted.push(el);
     return el;
