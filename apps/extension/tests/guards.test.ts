@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { JSDOM } from "jsdom";
 import { checkEligibility } from "../src/guards/eligibility";
 import { hasSensitiveField } from "../src/guards/fields";
-import { matchNeverRun } from "../src/guards/neverRun";
+import { matchNeverRun } from "@focal-ai/core/neverRun";
 import { DEFAULT_SETTINGS, hostMatches, normalizeHost, parseSettings, toggleSite } from "../src/settings";
 
 const doc = (html: string) => new JSDOM(`<body>${html}</body>`).window.document;

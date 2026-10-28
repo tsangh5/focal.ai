@@ -1,6 +1,6 @@
 import { hostMatches, type Settings } from "../settings";
 import { hasSensitiveField } from "./fields";
-import { matchNeverRun, type NeverRunCategory } from "./neverRun";
+import { matchNeverRun, type NeverRunCategory } from "@focal-ai/core/neverRun";
 
 export type IneligibleReason =
   | { kind: "scheme" }

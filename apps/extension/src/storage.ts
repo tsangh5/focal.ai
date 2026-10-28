@@ -1,5 +1,5 @@
 import { DEFAULT_SETTINGS, parseSettings, type Settings } from "./settings";
-import { NEVER_RUN_VERSION } from "./guards/neverRun";
+import { NEVER_RUN_VERSION } from "@focal-ai/core/neverRun";
 
 export interface Session {
   token: string;

@@ -18,7 +18,7 @@ export type NeverRunCategory =
   | "search-engine"
   | "focal";
 
-const SITES: Record<Exclude<NeverRunCategory, "focal">, string[]> = {
+export const SITES_BY_CATEGORY: Record<Exclude<NeverRunCategory, "focal">, string[]> = {
   banking: [
     "paypal.com", "stripe.com", "venmo.com", "wise.com", "revolut.com", "monzo.com",
     "chase.com", "bankofamerica.com", "wellsfargo.com", "citi.com", "capitalone.com",
@@ -69,7 +69,9 @@ const SITES: Record<Exclude<NeverRunCategory, "focal">, string[]> = {
   developer: [
     "github.com", "gitlab.com", "bitbucket.org", "console.cloud.google.com",
     "console.aws.amazon.com", "portal.azure.com", "vercel.com", "netlify.com",
-    "heroku.com", "console.neon.tech", "supabase.com", "dashboard.stripe.com",
+    // stripe.com is already covered by `banking`, which wins the category
+    // loop and is the more accurate reason for a payments dashboard.
+    "heroku.com", "console.neon.tech", "supabase.com",
     "sentry.io", "datadoghq.com", "grafana.com", "jira.com", "atlassian.net",
     "linear.app", "figma.com",
   ],
@@ -119,7 +121,7 @@ export function matchNeverRun(url: URL, focalHosts: string[] = []): NeverRunCate
   const host = url.hostname.toLowerCase().replace(/^www\./, "");
   if (focalHosts.some((f) => suffixMatch(host, f.toLowerCase().replace(/^www\./, "")))) return "focal";
   if (FOCAL_DEPLOYMENT.test(host)) return "focal";
-  for (const [category, sites] of Object.entries(SITES) as [NeverRunCategory, string[]][]) {
+  for (const [category, sites] of Object.entries(SITES_BY_CATEGORY) as [NeverRunCategory, string[]][]) {
     if (sites.some((s) => suffixMatch(host, s))) return category;
   }
   // After the category loop, so the more specific Google hosts already listed

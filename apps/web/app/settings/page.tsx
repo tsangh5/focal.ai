@@ -1,5 +1,6 @@
 import { Suspense } from "react";
 import { connection } from "next/server";
+import { NeverRunList } from "@/components/account/NeverRunList";
 import { AccountData, SkipSites } from "@/components/account/SiteSettings";
 import { SiteHeader } from "@/components/site/SiteHeader";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -12,6 +13,7 @@ async function Gate() {
   return (
     <>
       <SkipSites extensionId={process.env.NEXT_PUBLIC_FOCAL_EXTENSION_ID ?? ""} />
+      <NeverRunList />
       <AccountData signOutAvailable={authEnabled()} />
     </>
   );
