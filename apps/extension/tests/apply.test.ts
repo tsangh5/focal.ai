@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { JSDOM } from "jsdom";
 import { __setTrustCheckForTests, applyPlan, focalClickTrusted } from "../src/apply/apply";
-import { detectList } from "../src/detect/detect";
+import { detectList, snapshotCards } from "../src/detect/detect";
 import type { RenderPlan, RenderOp } from "../src/types";
 import { BOOK_LIST, RESTAURANT_GRID } from "./fixtures";
 
@@ -140,6 +140,89 @@ describe("applyPlan", () => {
     fold.querySelector("button")!.click();
     expect(c3.style.display).toBe("");
     expect(d.querySelector('[data-focal="fold"]')).toBeNull();
+  });
+
+  const fold = (...clientIds: string[]): RenderOp => ({ op: "collapse", containerId: "x", clientIds, label: `${clientIds.length} hidden by your rules` });
+
+  it("Show gives a folded card back its whole inline style, and no style attribute if it had none", () => {
+    const d = page(BOOK_LIST.replace('<li><a href="/book/4">', '<li style="display:flex;gap:4px"><a href="/book/4">'));
+    const list = detectList(d)!;
+    const [circe, pachinko] = [list.cards.get("c3"), list.cards.get("c4")] as HTMLElement[];
+    applyPlan(list, plan([fold("c3", "c4")], 0));
+    expect(circe!.style.display).toBe("none");
+    d.querySelector<HTMLButtonElement>('[data-focal="show"]')!.click();
+    expect(circe!.getAttribute("style")).toBe("display:flex;gap:4px");
+    expect(pachinko!.hasAttribute("style")).toBe(false);
+    expect(d.querySelector("[data-focal-hidden]")).toBeNull();
+  });
+
+  it("hides a card whose site CSS sets display with !important", () => {
+    const d = page(`<style>.list li { display: flex !important }</style>${BOOK_LIST}`);
+    const list = detectList(d)!;
+    const pachinko = list.cards.get("c4") as HTMLElement;
+    const shown = () => d.defaultView!.getComputedStyle(pachinko).display;
+    expect(shown()).toBe("flex");
+    applyPlan(list, plan([fold("c4")], 0));
+    expect(shown()).toBe("none");
+    d.querySelector<HTMLButtonElement>('[data-focal="show"]')!.click();
+    expect(shown()).toBe("flex");
+  });
+
+  it("Show in a CSS-order grid keeps the card where the reorder put it", () => {
+    const d = page(RESTAURANT_GRID.replace('<div class="card card-1004">', '<div class="card card-1004" style="display:flex">'));
+    const list = detectList(d)!;
+    const okonomi = list.cards.get("c3") as HTMLElement;
+    const handle = applyPlan(list, plan([{ op: "reorder", containerId: "x", order: ["c2", "c0", "c1", "c3"] }, fold("c3")]));
+    expect(handle.mode).toBe("css-order");
+    const order = okonomi.style.order;
+    expect(order).toBe("4");
+    d.querySelector<HTMLButtonElement>('[data-focal="show"]')!.click();
+    expect([okonomi.style.display, okonomi.style.order]).toEqual(["flex", order]);
+    handle.undo();
+    expect(okonomi.getAttribute("style")).toBe("display:flex");
+  });
+
+  it("a folded card is still a card to the next detection, so later mutations don't look like removals", () => {
+    const d = page(BOOK_LIST);
+    const list = detectList(d)!;
+    const handle = applyPlan(list, plan([fold("c3", "c4")], 0));
+    expect((list.cards.get("c3") as HTMLElement).style.display).toBe("none");
+    const again = detectList(d)!;
+    expect(again.container).toBe(list.container);
+    expect([...again.cards.values()]).toEqual([...list.cards.values()]);
+    expect(snapshotCards(again).map((c) => c.snippets[0])).toEqual(["The Overstory", "Piranesi", "Klara and the Sun", "Circe", "Pachinko"]);
+    handle.undo();
+    expect(d.querySelector("[data-focal-hidden]")).toBeNull();
+  });
+
+  it("focal's own nodes are invisible to detection: a labelled class-less card keeps its shape, group and snippets", () => {
+    const d = page(BOOK_LIST);
+    const before = detectList(d)!;
+    applyPlan(before, plan([{ op: "annotate", containerId: "x", clientId: "c1", text: "Top pick for you", badge: "top-pick" }], 0));
+    // focal UI that keeps its text in light DOM, like the fold line and the strip.
+    before.cards.get("c3")!.insertAdjacentHTML("afterbegin", '<focal-label data-focal="label"><span>Good match · because you like Circe</span></focal-label>');
+    const after = detectList(d)!;
+    expect(after.container).toBe(before.container);
+    expect([...after.cards.values()]).toEqual([...before.cards.values()]);
+    expect(after.signature).toBe(before.signature);
+    expect(JSON.stringify(snapshotCards(after))).not.toMatch(/Top pick|Good match/);
+  });
+
+  it("move-mode Undo puts the originals back first, in their order, then what the site appended since", () => {
+    const d = page(BOOK_LIST);
+    const list = detectList(d)!;
+    const container = list.container;
+    const originalHtml = container.innerHTML;
+    const handle = applyPlan(list, plan([{ op: "reorder", containerId: "x", order: ["c4", "c3", "c0", "c1", "c2"] }], 2));
+    expect(handle.mode).toBe("move");
+    // Infinite scroll loads two more after the reorder.
+    const more =
+      '<li><a href="/book/6"><b>Middlemarch</b></a><div>George Eliot</div><div>1871</div></li>' +
+      '<li><a href="/book/7"><b>Beloved</b></a><div>Toni Morrison</div><div>1987</div></li>';
+    container.insertAdjacentHTML("beforeend", more);
+    handle.undo();
+    expect(titles(container.children)).toEqual(["The Overstory", "Piranesi", "Klara and the Sun", "Circe", "Pachinko", "Middlemarch", "Beloved"]);
+    expect(container.innerHTML).toBe(originalHtml + more);
   });
 
   it("Why this order? calls back", () => {

@@ -1,7 +1,8 @@
+import { FOCAL_ATTR, FOCAL_HIDDEN_ATTR } from "../detect/detect";
 import type { RenderOp, RenderPlan } from "../types";
 import { blockAnchor, decorate, flip, popIn, sparkleSvg, VIOLET } from "./ui";
 
-export const FOCAL_ATTR = "data-focal";
+export { FOCAL_ATTR };
 
 export interface ApplyTarget {
   container: Element;
@@ -89,6 +90,14 @@ function isFlexOrGrid(el: Element): boolean {
 /** Records an element's original style attribute once, for Undo. */
 function saveStyle(el: HTMLElement, saved: Map<HTMLElement, string | null>): void {
   if (!saved.has(el)) saved.set(el, el.getAttribute("style"));
+}
+
+/** Puts back the style attribute saveStyle recorded, removing it if there was none. */
+function restoreStyle(el: HTMLElement, saved: Map<HTMLElement, string | null>): void {
+  const style = saved.get(el);
+  if (style === undefined) return;
+  if (style === null) el.removeAttribute("style");
+  else el.setAttribute("style", style);
 }
 
 function make(doc: Document, tag: string, kind: string, text?: string): HTMLElement {
@@ -274,6 +283,17 @@ export function applyPlan(target: ApplyTarget, plan: RenderPlan, opts: ApplyOpti
   const sequence = reorder ? sequenceFor(container, cards, reorder.order, lifted) : originalChildren;
   const position = (el: Element) => (el as HTMLElement).style.getPropertyValue("order");
 
+  /**
+   * Show: the card gets back the whole style the site gave it, not just its
+   * display. Under a CSS-order reorder it keeps its place in the new order.
+   */
+  function unfold(el: HTMLElement): void {
+    const order = mode === "css-order" ? position(el) : "";
+    restoreStyle(el, savedStyles);
+    if (order && position(el) !== order) el.style.setProperty("order", order);
+    el.removeAttribute(FOCAL_HIDDEN_ATTR);
+  }
+
   /** Labels, highlights and folds; shared by the first apply and later top-ups. */
   function applyOp(op: RenderOp): void {
     if (op.op === "annotate") {
@@ -297,7 +317,9 @@ export function applyPlan(target: ApplyTarget, plan: RenderPlan, opts: ApplyOpti
       if (!first) return;
       for (const el of els) {
         saveStyle(el, savedStyles);
-        el.style.setProperty("display", "none");
+        // important: a site rule like `display: flex !important` beats a plain inline value.
+        el.style.setProperty("display", "none", "important");
+        el.setAttribute(FOCAL_HIDDEN_ATTR, "");
       }
       const fold = decorate(make(doc, "div", "fold"), "fold");
       fold.append(doc.createTextNode(op.label));
@@ -314,7 +336,7 @@ export function applyPlan(target: ApplyTarget, plan: RenderPlan, opts: ApplyOpti
         show.setAttribute("type", "button");
         show.addEventListener("click", (event) => {
           if (!focalTrusted(event, fold)) return;
-          for (const el of els) el.style.removeProperty("display");
+          for (const el of els) unfold(el);
           holder.remove();
         });
         fold.append(show);
@@ -336,12 +358,14 @@ export function applyPlan(target: ApplyTarget, plan: RenderPlan, opts: ApplyOpti
       active = false;
       flip([...cards.values()], () => {
         for (const el of inserted) el.remove();
-        for (const [el, style] of savedStyles) {
-          if (style === null) el.removeAttribute("style");
-          else el.setAttribute("style", style);
-        }
+        for (const el of savedStyles.keys()) restoreStyle(el, savedStyles);
+        for (const el of cards.values()) el.removeAttribute(FOCAL_HIDDEN_ATTR);
         if (reorder && mode === "move") {
-          for (const node of originalNodes) if (node.parentNode === container) container.appendChild(node);
+          // Originals go back in their order ahead of anything the site added
+          // since (infinite scroll, ads); appending would put them after it.
+          const original = new Set(originalNodes);
+          const anchor = [...container.childNodes].find((node) => !original.has(node)) ?? null;
+          for (const node of originalNodes) if (node.parentNode === container) container.insertBefore(node, anchor);
         }
       });
       opts.onUndo?.();

@@ -16,8 +16,22 @@ export interface DetectedList {
   score: number;
 }
 
+/**
+ * On every node focal injects (labels, the strip, fold lines, chips).
+ * Detection never sees them, so a labelled card keeps its shape and group.
+ */
+export const FOCAL_ATTR = "data-focal";
+
+/**
+ * Marks a card focal folded away. Its display:none is focal's, not the
+ * site's, so detection still counts it as a card.
+ */
+export const FOCAL_HIDDEN_ATTR = "data-focal-hidden";
+
+// Form fields hold what the user typed (a gift message, special requests),
+// which must never become a snippet.
 const SKIP_TAGS = new Set([
-  "SCRIPT", "STYLE", "NOSCRIPT", "TEMPLATE", "SVG", "HEAD", "IFRAME", "CANVAS", "SELECT", "OPTION",
+  "SCRIPT", "STYLE", "NOSCRIPT", "TEMPLATE", "SVG", "HEAD", "IFRAME", "CANVAS", "SELECT", "OPTION", "TEXTAREA", "INPUT",
 ]);
 const CHROME_TAGS = new Set(["NAV", "HEADER", "FOOTER", "ASIDE", "FORM", "MENU"]);
 const CHROME_ROLES = /^(navigation|menu|menubar|tablist|banner|contentinfo|toolbar|dialog|alertdialog|complementary)$/;
@@ -34,7 +48,7 @@ function rendered(el: Element): boolean {
 function isHidden(el: Element): boolean {
   if (el.hasAttribute("hidden")) return true;
   const style = (el as HTMLElement).style;
-  if (style?.display === "none" || style?.visibility === "hidden") return true;
+  if ((style?.display === "none" && !el.hasAttribute(FOCAL_HIDDEN_ATTR)) || style?.visibility === "hidden") return true;
   /**
    * `aria-hidden` is an accessibility hint, not a visibility property, and real
    * sites leave it behind: Everlane ships `aria-hidden="true"` on
@@ -42,9 +56,15 @@ function isHidden(el: Element): boolean {
    * found no list at all. It is only believed when the element really is not
    * rendered. The check is the expensive one, but `aria-hidden` is rare, so
    * the walk still costs nothing on the overwhelming majority of elements.
+   * A card focal folded isn't rendered either, but it is still a card.
    */
-  if (el.getAttribute("aria-hidden") === "true") return !rendered(el);
+  if (el.getAttribute("aria-hidden") === "true") return !el.hasAttribute(FOCAL_HIDDEN_ATTR) && !rendered(el);
   return false;
+}
+
+/** Not part of the page's content: skipped tags, hidden elements and focal's own nodes. */
+function skipped(el: Element): boolean {
+  return SKIP_TAGS.has(el.tagName) || el.hasAttribute(FOCAL_ATTR) || isHidden(el);
 }
 
 function inChrome(el: Element): boolean {
@@ -66,7 +86,7 @@ function stableClasses(el: Element): string {
 
 /** Shape of an element: its own tag + classes plus its children's tags. */
 function shape(el: Element): string {
-  const kids = [...el.children].map((c) => c.tagName).join(",");
+  const kids = [...el.children].filter((c) => !c.hasAttribute(FOCAL_ATTR)).map((c) => c.tagName).join(",");
   return `${el.tagName}.${stableClasses(el)}[${kids}]`;
 }
 
@@ -92,7 +112,7 @@ export function extractSnippets(card: Element): string[] {
   const out: string[] = [];
   const seen = new Set<string>();
   const visit = (el: Element) => {
-    if (out.length >= MAX_SNIPPETS || SKIP_TAGS.has(el.tagName) || isHidden(el)) return;
+    if (out.length >= MAX_SNIPPETS || skipped(el)) return;
     if (el.tagName === "BUTTON" || el.getAttribute("role") === "button") return;
     let own = "";
     for (const node of el.childNodes) {
@@ -190,11 +210,11 @@ export function detectList(root: Document | Element): DetectedList | null {
   if (!body) return null;
   let best: Candidate | null = null;
   const walk = (el: Element) => {
-    if (SKIP_TAGS.has(el.tagName) || isHidden(el)) return;
+    if (skipped(el)) return;
     if (el.children.length >= MIN_CARDS) {
       const groups = new Map<string, Element[]>();
       for (const child of el.children) {
-        if (SKIP_TAGS.has(child.tagName) || isHidden(child)) continue;
+        if (skipped(child)) continue;
         const key = groupKey(child);
         const list = groups.get(key);
         if (list) list.push(child);

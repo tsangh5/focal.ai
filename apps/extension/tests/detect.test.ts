@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { JSDOM } from "jsdom";
-import { MAX_CARDS, cityHints, detectList, extractLinks, extractSnippets, snapshotCards } from "../src/detect/detect";
+import { FOCAL_HIDDEN_ATTR, MAX_CARDS, cityHints, detectList, extractLinks, extractSnippets, snapshotCards } from "../src/detect/detect";
 import { pathPattern } from "../src/api";
 import { ARTICLE, BOOK_LIST, RESTAURANT_GRID } from "./fixtures";
 
@@ -57,6 +57,48 @@ describe("detectList", () => {
   it("still believes aria-hidden when the element really is not rendered", () => {
     const html = `<div aria-hidden="true" style="display:none">${BOOK_LIST}</div>`;
     expect(detectList(page(html))).toBeNull();
+  });
+
+  it("still counts a card focal folded away, but not one the site hid itself", () => {
+    const d = page(BOOK_LIST);
+    const [folded, siteHidden, offscreen] = [...detectList(d)!.cards.values()] as HTMLElement[];
+    // A carousel's offscreen slide: aria-hidden, but rendered until focal folds it.
+    offscreen!.setAttribute("aria-hidden", "true");
+    for (const el of [folded!, offscreen!]) {
+      el.style.setProperty("display", "none", "important");
+      el.setAttribute(FOCAL_HIDDEN_ATTR, "");
+    }
+    siteHidden!.style.display = "none";
+    const cards = [...detectList(d)!.cards.values()];
+    expect(cards).toHaveLength(4);
+    expect(cards).toContain(folded);
+    expect(cards).toContain(offscreen);
+    expect(cards).not.toContain(siteHidden);
+  });
+});
+
+describe("what the user typed", () => {
+  it("never becomes a snippet: textarea and input contents stay on the page", () => {
+    const gifts = ["Peonies", "Tulips", "Ranunculus"]
+      .map((t, i) => `<li><a href="/gift/${i}"><b>${t}</b></a><div>Bouquet · $${40 + i}</div><textarea name="message"></textarea><input name="note"></li>`)
+      .join("");
+    const d = page(`<ul>${gifts}</ul>`);
+    for (const field of d.querySelectorAll("textarea")) {
+      field.value = "Happy birthday Sam, love Mum";
+      // React keeps a controlled textarea's text content in step with what was typed.
+      field.defaultValue = field.value;
+    }
+    for (const field of d.querySelectorAll("input")) {
+      field.value = "Leave it by the back door";
+      field.setAttribute("value", field.value);
+    }
+    const snap = snapshotCards(detectList(d)!);
+    expect(snap.map((c) => c.snippets)).toEqual([
+      ["Peonies", "Bouquet · $40"],
+      ["Tulips", "Bouquet · $41"],
+      ["Ranunculus", "Bouquet · $42"],
+    ]);
+    expect(JSON.stringify(snap)).not.toMatch(/birthday|back door/);
   });
 });
 

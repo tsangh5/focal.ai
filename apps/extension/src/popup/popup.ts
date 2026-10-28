@@ -2,15 +2,9 @@ import { FOCAL_HOSTS, FOCAL_ORIGIN } from "../config";
 import { checkEligibility } from "../guards/eligibility";
 import { normalizeHost, toggleSite } from "../settings";
 import { getSession, getSettings, getTabResult, setSettings } from "../storage";
+import { REASON_TEXT } from "./reasons";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
-
-const REASON_TEXT: Record<string, string> = {
-  scheme: "focal doesn't run on this page.",
-  "never-run": "focal never runs on this kind of site.",
-  skipped: "You skip this site in settings.",
-  incognito: "focal is off in incognito.",
-};
 
 async function main(): Promise<void> {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -35,7 +29,7 @@ async function main(): Promise<void> {
   if (!check.eligible) {
     toggle.disabled = true;
     toggle.checked = false;
-    $("site-status").textContent = REASON_TEXT[check.reason.kind] ?? "";
+    $("site-status").textContent = REASON_TEXT[check.reason.kind];
   } else {
     toggle.checked = !settings.siteOff.includes(host);
     toggle.addEventListener("change", async () => {
