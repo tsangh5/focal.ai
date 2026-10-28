@@ -35,8 +35,8 @@ export default function Home() {
             <Link href={start} className={buttonVariants({ size: "lg" })}>
               Get started
             </Link>
-            <Link href="/try" className={buttonVariants({ variant: "outline", size: "lg" })}>
-              Try it without installing
+            <Link href="/connect" className={buttonVariants({ variant: "outline", size: "lg" })}>
+              Install the extension
             </Link>
           </div>
         </section>

@@ -49,6 +49,29 @@ describe("never-run list", () => {
     expect(matchNeverRun(new URL(url))).toBe(category);
   });
 
+  // Re-ordering a search engine's own results fights the page's purpose.
+  it.each([
+    ["https://www.google.com/search?q=ramen", "search-engine"],
+    ["https://google.co.uk/search?q=ramen", "search-engine"],
+    ["https://google.de/", "search-engine"],
+    ["https://maps.google.com/maps", "search-engine"],
+    ["https://www.bing.com/search?q=ramen", "search-engine"],
+    ["https://duckduckgo.com/?q=ramen", "search-engine"],
+    ["https://search.brave.com/search?q=ramen", "search-engine"],
+  ])("%s → %s", (url, category) => {
+    expect(matchNeverRun(new URL(url))).toBe(category);
+  });
+
+  // More specific Google hosts keep their own, more accurate reason.
+  it.each([
+    ["https://mail.google.com/mail/u/0", "email"],
+    ["https://docs.google.com/document/d/x", "documents"],
+    ["https://gemini.google.com/app", "assistant"],
+    ["https://accounts.google.com/signin", "sign-in"],
+  ])("%s keeps its specific category (%s)", (url, category) => {
+    expect(matchNeverRun(new URL(url))).toBe(category);
+  });
+
   it.each([
     "http://localhost:3000/chat",
     "http://127.0.0.1:8080/",

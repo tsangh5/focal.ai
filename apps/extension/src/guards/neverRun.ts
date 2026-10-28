@@ -2,7 +2,7 @@
  * Built-in never-run list (§5.1). Not user-configurable. Bump the version when
  * the list changes so cached copies in chrome.storage can be compared.
  */
-export const NEVER_RUN_VERSION = 2;
+export const NEVER_RUN_VERSION = 3;
 
 export type NeverRunCategory =
   | "banking"
@@ -15,6 +15,7 @@ export type NeverRunCategory =
   | "sign-in"
   | "assistant"
   | "developer"
+  | "search-engine"
   | "focal";
 
 const SITES: Record<Exclude<NeverRunCategory, "focal">, string[]> = {
@@ -72,7 +73,22 @@ const SITES: Record<Exclude<NeverRunCategory, "focal">, string[]> = {
     "sentry.io", "datadoghq.com", "grafana.com", "jira.com", "atlassian.net",
     "linear.app", "figma.com",
   ],
+  // Search engines rank their own results, and re-ordering them is both the
+  // one place focal would be fighting the page's whole purpose and the most
+  // likely to breach a site's terms. Google's ccTLDs are matched by regex.
+  "search-engine": [
+    "bing.com", "duckduckgo.com", "search.yahoo.com", "yandex.com", "yandex.ru",
+    "baidu.com", "ecosia.org", "startpage.com", "qwant.com", "search.brave.com",
+    "kagi.com", "mojeek.com", "searx.be",
+  ],
 };
+
+/**
+ * Every Google property, across all ~190 ccTLDs (`google.com`, `google.co.uk`,
+ * `google.de`) and subdomains. Deliberately broad: it also covers Maps and
+ * Images, which are list-shaped and would otherwise be ranked.
+ */
+const GOOGLE_HOST = /(^|\.)google(\.[a-z]{2,3}){1,2}$/;
 
 const GOV_SUFFIX = /(^|\.)(gov|mil)(\.[a-z]{2})?$|(^|\.)gouv\.[a-z]{2}$|(^|\.)gob\.[a-z]{2}$|(^|\.)gc\.ca$|(^|\.)bund\.de$/;
 const BANK_LABEL = /(^|[.-])[a-z0-9]*bank(ing)?[a-z0-9]*\./;
@@ -98,6 +114,10 @@ export function matchNeverRun(url: URL, focalHosts: string[] = []): NeverRunCate
   for (const [category, sites] of Object.entries(SITES) as [NeverRunCategory, string[]][]) {
     if (sites.some((s) => suffixMatch(host, s))) return category;
   }
+  // After the category loop, so the more specific Google hosts already listed
+  // there keep their own reason (gemini → assistant, mail → email,
+  // docs/drive → documents, accounts → sign-in). The rest is search.
+  if (GOOGLE_HOST.test(host)) return "search-engine";
   if (LOCAL_HOST.test(host)) return "developer";
   if (GOV_SUFFIX.test(host)) return "government";
   if (BANK_LABEL.test(`${host}.`)) return "banking";

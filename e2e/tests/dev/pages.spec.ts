@@ -1,6 +1,5 @@
 // Website pages in local-dev mode (the dev@localhost account, no sign-in).
 import { readFileSync } from "node:fs";
-import type { Page } from "@playwright/test";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Db } from "@focal-ai/db";
@@ -16,17 +15,6 @@ test.beforeEach(async () => {
   devId = await resetDevAccount(db);
 });
 
-async function studioResults(page: Page): Promise<string[]> {
-  return page.getByRole("list", { name: /results/ }).getByRole("heading", { level: 3 }).allTextContents();
-}
-
-async function addSeed(page: Page, name: string) {
-  await page.getByPlaceholder("Search artists, films, places…").fill(name);
-  await page.getByRole("button", { name: "Search", exact: true }).click();
-  await page.getByRole("listitem").filter({ hasText: name }).getByRole("button", { name: "Add", exact: true }).first().click();
-  await expect(page.getByRole("button", { name: `Remove ${name}` })).toBeVisible();
-}
-
 /** An assistant connected over MCP with a real session for the dev account. */
 async function assistant() {
   const { token } = await db.extensionSessions.issue(devId);
@@ -36,13 +24,10 @@ async function assistant() {
 }
 
 test.describe("landing and header", () => {
-  test("landing explains focal and starts onboarding; Try it opens the playground", async ({ page }) => {
+  test("landing explains focal and starts onboarding", async ({ page }) => {
     await page.goto("/");
     await expect(page.getByRole("heading", { level: 1 })).toHaveText("The web, rendered for you.");
     await expect(page.getByRole("link", { name: "Get started" })).toHaveAttribute("href", "/onboarding");
-    await page.getByRole("link", { name: "Try it without installing" }).click();
-    await expect(page).toHaveURL(`${WEB}/try`);
-    await expect(page.getByText("MOCK DATA")).toBeVisible();
   });
 
   test("header links reach every account page", async ({ page }) => {
@@ -78,49 +63,6 @@ test.describe("landing and header", () => {
   // Known issue: pages stream their shell first (partial prerendering), so notFound() inside it still answers 200.
   test.fixme("not-found pages answer with HTTP 404", async ({ request }) => {
     expect((await request.get("/why/00000000-0000-4000-8000-000000000000")).status()).toBe(404);
-  });
-});
-
-test.describe("Studio playground (/try)", () => {
-  test("add a like, Focus, and switch Original / Focal / Diff", async ({ page }) => {
-    await page.goto("/try");
-    await expect(page.getByRole("list", { name: /results/ }).getByRole("heading", { level: 3 })).toHaveCount(12);
-    const original = await studioResults(page);
-    await addSeed(page, "Rintaro");
-    await page.getByRole("button", { name: "Focus 12 results" }).click();
-    await expect(page.getByRole("button", { name: "Focal", exact: true })).toHaveAttribute("aria-pressed", "true");
-    expect(await studioResults(page)).not.toEqual(original);
-    await expect(page.getByText("/v2/insights").first()).toBeVisible();
-    await page.getByRole("button", { name: "Diff", exact: true }).click();
-    await page.getByRole("button", { name: "Original", exact: true }).click();
-    expect(await studioResults(page)).toEqual(original);
-  });
-
-  test("the playground profile persists, exports and clears", async ({ page }) => {
-    await page.goto("/try");
-    await addSeed(page, "Fugazi");
-    await page.reload();
-    await expect(page.getByRole("button", { name: "Remove Fugazi" })).toBeVisible();
-    const [download] = await Promise.all([page.waitForEvent("download"), page.getByRole("button", { name: "Export JSON" }).click()]);
-    expect(JSON.parse(readFileSync(await download.path(), "utf8")).seeds.map((s: { name: string }) => s.name)).toContain("Fugazi");
-    page.once("dialog", (d) => d.accept());
-    await page.getByRole("button", { name: "Clear" }).click();
-    await expect(page.getByText("0 seeds")).toBeVisible();
-  });
-
-  test("Paste ranks your own list; Ask focal proposes rules", async ({ page }) => {
-    await page.goto("/try");
-    await addSeed(page, "Rintaro");
-    await page.getByRole("button", { name: "Paste" }).click();
-    await page.getByPlaceholder(/Paste restaurant names/).fill("Olive Garden\nZuni Café\nRintaro\nState Bird Provisions");
-    await page.getByPlaceholder(/City \(optional\)/).fill("San Francisco");
-    await page.getByRole("button", { name: /Use this list/ }).click();
-    await page.getByRole("button", { name: "Focus 4 results" }).click();
-    await expect(page.getByRole("list", { name: /results/ }).getByRole("heading", { level: 3 })).toHaveCount(4);
-    await page.getByRole("tab", { name: "Ask focal" }).click();
-    await page.getByRole("textbox", { name: "Ask the agent" }).fill("hide sponsored and boost natural wine");
-    await page.getByRole("textbox", { name: "Ask the agent" }).press("Enter");
-    await expect(page.getByText("Proposed rules")).toBeVisible();
   });
 });
 

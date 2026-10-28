@@ -7,7 +7,6 @@ const LINKS = [
   { href: "/profile", label: "Profile" },
   { href: "/activity", label: "Activity" },
   { href: "/settings", label: "Settings" },
-  { href: "/try", label: "Try it" },
   { href: "/connect", label: "Extension" },
 ] as const;
 

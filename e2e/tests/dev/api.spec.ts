@@ -36,7 +36,7 @@ test.describe("health, headers, account", () => {
   });
 
   test("security headers on pages and APIs", async ({ request }) => {
-    for (const path of ["/", "/try", "/chat", "/api/health"]) {
+    for (const path of ["/", "/profile", "/chat", "/api/health"]) {
       const h = (await request.get(path)).headers();
       expect(h["x-content-type-options"], path).toBe("nosniff");
       expect(h["x-frame-options"], path).toBe("DENY");
