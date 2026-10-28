@@ -103,6 +103,20 @@ describe("applyPlan", () => {
     expect(d.querySelector("[data-focal]")).toBeNull();
   });
 
+  it("onUserUndo fires for the strip's Undo click only, never for a programmatic undo", () => {
+    const ops: RenderOp[] = [{ op: "reorder", containerId: "x", order: ["c3", "c0"] }];
+    const programmatic = vi.fn();
+    applyPlan(detectList(page(BOOK_LIST))!, plan(ops), { onUserUndo: programmatic }).undo();
+    expect(programmatic).not.toHaveBeenCalled();
+
+    const d = page(BOOK_LIST);
+    const onUserUndo = vi.fn();
+    const handle = applyPlan(detectList(d)!, plan(ops), { onUserUndo });
+    d.querySelector<HTMLButtonElement>('[data-focal="undo"]')!.click();
+    expect(handle.active).toBe(false);
+    expect(onUserUndo).toHaveBeenCalledOnce();
+  });
+
   it("site click handlers still work after reordering", () => {
     const d = page(BOOK_LIST);
     const list = detectList(d)!;

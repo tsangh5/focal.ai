@@ -84,7 +84,8 @@ export type ContentMessage =
   | { type: "identify"; body: IdentifyRequest }
   | { type: "rank"; body: RankRequest }
   | { type: "feedback"; body: FeedbackRequest }
-  | { type: "page-result"; pageResultId: string; lifted: number }
+  /** A null id clears the tab's result: its page or plan is gone. */
+  | { type: "page-result"; pageResultId: string | null; lifted: number }
   | { type: "open-why"; pageResultId: string }
   | { type: "sync-settings" };
 
