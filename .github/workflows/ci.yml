@@ -46,7 +46,8 @@ jobs:
 
   # Browser tests: the website, its APIs, MCP and the unpacked extension in Chromium (see e2e/README.md).
   e2e:
-    runs-on: ubuntu-latest
+    # ubuntu-latest is 26.04, where Playwright 1.56.1 can't install Chromium.
+    runs-on: ubuntu-24.04
     timeout-minutes: 40
     services:
       postgres:
