@@ -18,6 +18,13 @@ export const MAX_LABEL_LENGTH = 140;
 export const BADGE_TEXT: Record<LiftBadge, string> = {
   "top-pick": "Top pick for you",
   "good-match": "Good match",
+  favourite: "You like this",
+};
+
+/** Favourites say so directly; "because you like X" would be circular. */
+const FAVOURITE_TEXT: Record<"love" | "like", string> = {
+  love: "You love this",
+  like: "You like this",
 };
 
 export interface LiftLabel {
@@ -53,7 +60,11 @@ export function buildLiftLabel(
   badge: LiftBadge,
   contributions: { entityId: string; score: number }[] | undefined,
   profile: ProfileV2,
+  favourite?: "love" | "like",
 ): LiftLabel {
+  if (badge === "favourite") {
+    return { badge, text: FAVOURITE_TEXT[favourite ?? "like"], reasonNames: [] };
+  }
   const reasonNames = groundedReasonNames(contributions, profile);
   const words = BADGE_TEXT[badge];
   if (reasonNames.length === 0) return { badge, text: words, reasonNames };

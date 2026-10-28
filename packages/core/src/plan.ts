@@ -169,8 +169,13 @@ export function validatePlan(
             errors.push(`ops[${index}] annotate.text must not contain "<"`);
           }
         }
-        if (op.badge !== undefined && op.badge !== "top-pick" && op.badge !== "good-match") {
-          errors.push(`ops[${index}] annotate.badge must be "top-pick" or "good-match"`);
+        if (
+          op.badge !== undefined &&
+          op.badge !== "top-pick" &&
+          op.badge !== "good-match" &&
+          op.badge !== "favourite"
+        ) {
+          errors.push(`ops[${index}] annotate.badge must be "top-pick", "good-match" or "favourite"`);
         }
         break;
       case "emphasize":

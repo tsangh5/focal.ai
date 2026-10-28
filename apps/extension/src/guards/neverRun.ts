@@ -2,7 +2,7 @@
  * Built-in never-run list (§5.1). Not user-configurable. Bump the version when
  * the list changes so cached copies in chrome.storage can be compared.
  */
-export const NEVER_RUN_VERSION = 1;
+export const NEVER_RUN_VERSION = 2;
 
 export type NeverRunCategory =
   | "banking"
@@ -13,6 +13,8 @@ export type NeverRunCategory =
   | "documents"
   | "passwords"
   | "sign-in"
+  | "assistant"
+  | "developer"
   | "focal";
 
 const SITES: Record<Exclude<NeverRunCategory, "focal">, string[]> = {
@@ -54,12 +56,31 @@ const SITES: Record<Exclude<NeverRunCategory, "focal">, string[]> = {
     "appleid.apple.com", "id.apple.com", "auth0.com", "okta.com", "onelogin.com",
     "login.gov", "id.me",
   ],
+  // Chat transcripts are as sensitive as email or messaging, and a thread of
+  // turns looks enough like a card list to trip detection.
+  assistant: [
+    "claude.ai", "anthropic.com", "chatgpt.com", "chat.openai.com", "openai.com",
+    "gemini.google.com", "aistudio.google.com", "copilot.microsoft.com",
+    "perplexity.ai", "poe.com", "character.ai", "mistral.ai", "huggingface.co",
+  ],
+  // Consoles and repos: private code, infra and customer data. focal has
+  // nothing useful to rank here and these pages are full of list-shaped rows.
+  developer: [
+    "github.com", "gitlab.com", "bitbucket.org", "console.cloud.google.com",
+    "console.aws.amazon.com", "portal.azure.com", "vercel.com", "netlify.com",
+    "heroku.com", "console.neon.tech", "supabase.com", "dashboard.stripe.com",
+    "sentry.io", "datadoghq.com", "grafana.com", "jira.com", "atlassian.net",
+    "linear.app", "figma.com",
+  ],
 };
 
 const GOV_SUFFIX = /(^|\.)(gov|mil)(\.[a-z]{2})?$|(^|\.)gouv\.[a-z]{2}$|(^|\.)gob\.[a-z]{2}$|(^|\.)gc\.ca$|(^|\.)bund\.de$/;
 const BANK_LABEL = /(^|[.-])[a-z0-9]*bank(ing)?[a-z0-9]*\./;
 const HEALTH_LABEL = /(^|\.)(mychart|patient(portal)?|myhealth)[.-]/;
 const SIGNIN_LABEL = /^(login|signin|auth|accounts?|sso|id|secure|passport)\./;
+/** Dev servers, LAN hosts and private ranges: local-only pages, never ranked. */
+const LOCAL_HOST =
+  /^(localhost|127\.\d+\.\d+\.\d+|0\.0\.0\.0|\[?::1\]?|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+)$|\.(local|localhost|internal|test|invalid|lan|home\.arpa)$/;
 const SIGNIN_PATH =
   /\/(log-?in|sign-?in|sign-?up|register|auth|oauth2?|sso|account|accounts|my-?account|password|reset-password|checkout|payment|billing|wallet)(\/|$|\.|\?)/i;
 
@@ -77,6 +98,7 @@ export function matchNeverRun(url: URL, focalHosts: string[] = []): NeverRunCate
   for (const [category, sites] of Object.entries(SITES) as [NeverRunCategory, string[]][]) {
     if (sites.some((s) => suffixMatch(host, s))) return category;
   }
+  if (LOCAL_HOST.test(host)) return "developer";
   if (GOV_SUFFIX.test(host)) return "government";
   if (BANK_LABEL.test(`${host}.`)) return "banking";
   if (HEALTH_LABEL.test(`${host}.`)) return "health";

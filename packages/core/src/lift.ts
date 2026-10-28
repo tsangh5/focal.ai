@@ -10,9 +10,13 @@
  * Never lifted: disliked things, items carrying a disliked vibe, and items
  * folded by an active hard rule. A hard rule folds an item only when Qloo has
  * the item tagged with the rule's tag. Pending rules do nothing.
+ *
+ * Things the user already loves or likes are lifted above the scored matches:
+ * Qloo leaves signal entities out of its own results, so they come back with
+ * no affinity and would otherwise sit unscored in the site's order.
  */
 import type { Signal } from "./signals";
-import { activeRules, type ProfileV2, type VibeEntry } from "./taste";
+import { activeRules, type ProfileV2, type Strength, type VibeEntry } from "./taste";
 
 export interface LiftItem {
   clientId: string;
@@ -43,7 +47,7 @@ export const DEFAULT_LIFT_OPTIONS: Required<LiftOptions> = {
 };
 
 export type LiftOutcome = "lifted" | "kept" | "folded" | "disliked" | "unscored";
-export type LiftBadge = "top-pick" | "good-match";
+export type LiftBadge = "top-pick" | "good-match" | "favourite";
 
 export interface LiftItemDecision {
   clientId: string;
@@ -52,6 +56,8 @@ export interface LiftItemDecision {
   z?: number;
   effectiveZ?: number;
   badge?: LiftBadge;
+  /** Set when the item is something the profile already loves or likes. */
+  favourite?: Strength;
   /** Names of local-boost vibes that matched. */
   boosts?: string[];
   /** Names of the active rules that folded this item. */
@@ -100,6 +106,11 @@ export function decideLift(args: {
       .filter((e): e is VibeEntry => e.kind === "vibe" && e.strength === "dislike")
       .map((e) => e.qlooId),
   );
+  const favouredThings = new Map<string, Strength>(
+    profile.entries
+      .filter((e) => e.kind === "thing" && (e.strength === "love" || e.strength === "like"))
+      .map((e) => [e.qlooId, e.strength as Strength]),
+  );
   const rules = activeRules(profile);
 
   const scoredValues = byOriginal.flatMap((i) => (i.affinity !== undefined ? [i.affinity] : []));
@@ -131,23 +142,50 @@ export function decideLift(args: {
       decision.outcome = "disliked";
       return decision;
     }
+    const favourite = item.entityId !== undefined ? favouredThings.get(item.entityId) : undefined;
+    if (favourite !== undefined) {
+      decision.favourite = favourite;
+      return decision;
+    }
     if (item.affinity === undefined) decision.outcome = "unscored";
     return decision;
   });
 
-  const candidates = canLift
+  // Favourites need no page statistics: the user said so themselves. They lift
+  // above the scored matches and take from the same `maxLift` budget.
+  const favourites = decisions
+    .filter((d) => d.outcome === "kept" && d.favourite !== undefined)
+    .sort(
+      (a, b) =>
+        (a.favourite === b.favourite ? 0 : a.favourite === "love" ? -1 : 1) ||
+        a.originalIndex - b.originalIndex,
+    )
+    .slice(0, Math.max(0, opts.maxLift));
+
+  const scored = canLift
     ? decisions
-        .filter((d) => d.outcome === "kept" && d.effectiveZ !== undefined && d.effectiveZ >= opts.sigma)
+        .filter(
+          (d) =>
+            d.outcome === "kept" &&
+            d.favourite === undefined &&
+            d.effectiveZ !== undefined &&
+            d.effectiveZ >= opts.sigma,
+        )
         .sort((a, b) => (b.effectiveZ ?? 0) - (a.effectiveZ ?? 0) || a.originalIndex - b.originalIndex)
-        .slice(0, Math.max(0, opts.maxLift))
+        .slice(0, Math.max(0, opts.maxLift - favourites.length))
     : [];
 
-  candidates.forEach((d, index) => {
+  favourites.forEach((d) => {
+    d.outcome = "lifted";
+    d.badge = "favourite";
+  });
+  scored.forEach((d, index) => {
     d.outcome = "lifted";
     const topPick =
       index < opts.maxTopPicks && (index === 0 || (d.effectiveZ ?? 0) >= opts.topPickSigma);
     d.badge = topPick ? "top-pick" : "good-match";
   });
+  const candidates = [...favourites, ...scored];
 
   const lifted = candidates.map((d) => d.clientId);
   const liftedSet = new Set(lifted);

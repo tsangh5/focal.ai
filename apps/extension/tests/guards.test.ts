@@ -33,6 +33,33 @@ describe("never-run list", () => {
     expect(matchNeverRun(new URL("https://app.focal.ai/profile"), ["focal.ai"])).toBe("focal");
   });
 
+  // A chat transcript is as sensitive as email, and its turns look like a card list.
+  it.each([
+    ["https://claude.ai/chat/abc", "assistant"],
+    ["https://console.anthropic.com/dashboard", "assistant"],
+    ["https://chatgpt.com/c/abc", "assistant"],
+    ["https://chat.openai.com/c/abc", "assistant"],
+    ["https://gemini.google.com/app", "assistant"],
+    ["https://www.perplexity.ai/search", "assistant"],
+    ["https://github.com/tsangh5/focal.ai", "developer"],
+    ["https://console.cloud.google.com/home", "developer"],
+    ["https://linear.app/team/issues", "developer"],
+    ["https://console.neon.tech/app/projects", "developer"],
+  ])("%s → %s", (url, category) => {
+    expect(matchNeverRun(new URL(url))).toBe(category);
+  });
+
+  it.each([
+    "http://localhost:3000/chat",
+    "http://127.0.0.1:8080/",
+    "http://192.168.1.10/admin",
+    "http://10.0.0.5:3000/",
+    "http://dev.local/list",
+    "http://box.internal/items",
+  ])("blocks local host %s", (url) => {
+    expect(matchNeverRun(new URL(url))).toBe("developer");
+  });
+
   it.each([
     "https://www.yelp.com/search?find_desc=ramen",
     "https://www.goodreads.com/list/show/1",

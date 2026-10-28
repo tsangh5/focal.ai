@@ -20,6 +20,51 @@ describe("decideLift", () => {
     expect(d.items.find((i) => i.clientId === "c4")?.badge).toBe("top-pick");
   });
 
+  // Qloo leaves signal entities out of its own results, so a place the user
+  // already likes comes back with no affinity. It must still lift.
+  it("lifts an unscored item the profile already likes", () => {
+    const d = decideLift({
+      items: items([0.7, 0.7, 0.7, undefined]),
+      profile: profileOf(thing("E3", { name: "Rintaro", strength: "like" })),
+    });
+    expect(d.lifted).toEqual(["c3"]);
+    expect(d.items.find((i) => i.clientId === "c3")?.badge).toBe("favourite");
+    expect(d.items.find((i) => i.clientId === "c3")?.outcome).toBe("lifted");
+  });
+
+  it("puts loved things above liked things, and both above scored matches", () => {
+    const d = decideLift({
+      items: items([0.70, 0.71, 0.95, undefined, undefined]),
+      profile: profileOf(
+        thing("E3", { name: "Liked", strength: "like" }),
+        thing("E4", { name: "Loved", strength: "love" }),
+      ),
+    });
+    expect(d.lifted).toEqual(["c4", "c3", "c2"]);
+  });
+
+  it("never lifts a disliked thing even when it is also on the page", () => {
+    const d = decideLift({
+      items: items([0.7, 0.7, 0.7, undefined]),
+      profile: profileOf(thing("E3", { name: "Nope", strength: "dislike" })),
+    });
+    expect(d.lifted).toEqual([]);
+    expect(d.items.find((i) => i.clientId === "c3")?.outcome).toBe("disliked");
+  });
+
+  it("counts favourites against maxLift", () => {
+    const d = decideLift({
+      items: items([0.70, 0.71, 0.95, 0.96, undefined, undefined]),
+      profile: profileOf(
+        thing("E4", { name: "A", strength: "love" }),
+        thing("E5", { name: "B", strength: "love" }),
+      ),
+      options: { maxLift: 3 },
+    });
+    expect(d.lifted).toHaveLength(3);
+    expect(d.lifted.slice(0, 2)).toEqual(["c4", "c5"]);
+  });
+
   it("does nothing with fewer than 3 scored items", () => {
     const d = decideLift({ items: items([0.9, 0.1, undefined, undefined]), profile: profileOf() });
     expect(d.lifted).toEqual([]);

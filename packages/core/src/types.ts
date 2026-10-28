@@ -82,7 +82,13 @@ export interface RankedCandidate extends ResolvedCandidate {
 export type RenderOp =
   | { op: "reorder"; containerId: string; order: string[] }
   | { op: "collapse"; containerId: string; clientIds: string[]; label: string }
-  | { op: "annotate"; containerId: string; clientId: string; text: string; badge?: "top-pick" | "good-match" }
+  | {
+      op: "annotate";
+      containerId: string;
+      clientId: string;
+      text: string;
+      badge?: "top-pick" | "good-match" | "favourite";
+    }
   | { op: "emphasize"; containerId: string; clientId: string; level: "high" }
   | { op: "hide"; containerId: string; clientIds: string[]; label: string };
 

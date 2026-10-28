@@ -1,6 +1,8 @@
 import { Suspense } from "react";
 import { connection } from "next/server";
 import { ProfileEditor } from "@/components/account/ProfileEditor";
+import { TasteContext } from "@/components/profile/TasteContext";
+import { TrendingForYou } from "@/components/profile/TrendingForYou";
 import { SiteHeader } from "@/components/site/SiteHeader";
 import { Skeleton } from "@/components/ui/skeleton";
 import { requireViewer } from "@/lib/server/auth/pageGate";
@@ -8,7 +10,13 @@ import { requireViewer } from "@/lib/server/auth/pageGate";
 async function Gate() {
   await connection();
   await requireViewer("/profile");
-  return <ProfileEditor />;
+  return (
+    <>
+      <TasteContext />
+      <TrendingForYou city="San Francisco" />
+      <ProfileEditor />
+    </>
+  );
 }
 
 export default function ProfilePage() {

@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { PlaceholdersAndVanishInput } from "@/components/ui/placeholders-and-vanish-input";
 import { describeEvent } from "@/lib/client/chatEvents";
+import { AGENT_NAME, IrisAvatar } from "./IrisAvatar";
 import { cn } from "@/lib/utils";
 
 interface Message {
@@ -85,13 +86,16 @@ export function ChatPanel({ email }: { email: string }) {
   }
 
   return (
-    <section className="flex min-h-[70vh] flex-col gap-4" aria-label="Chat with focal">
-      <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold tracking-tight text-ink">Tell focal what you like</h1>
-        <p className="text-sm text-muted">
-          Name artists, places, books or shows. focal only saves exact matches and asks when it isn&apos;t sure. Signed in as{" "}
-          {email}.
-        </p>
+    <section className="flex min-h-[70vh] flex-col gap-4" aria-label={`Chat with ${AGENT_NAME}`}>
+      <div className="flex items-start gap-3">
+        <IrisAvatar size={36} className="mt-0.5 shrink-0" />
+        <div className="flex flex-col gap-1">
+          <h1 className="text-2xl font-semibold tracking-tight text-ink">Tell {AGENT_NAME} what you like</h1>
+          <p className="text-sm text-muted">
+            Name artists, places, books or shows. {AGENT_NAME} only saves exact matches, and asks when a match is
+            unclear. Signed in as {email}.
+          </p>
+        </div>
       </div>
 
       <div className="flex flex-1 flex-col gap-3 rounded-xl border border-line bg-surface p-4" role="log" aria-live="polite">
@@ -118,14 +122,17 @@ export function ChatPanel({ email }: { email: string }) {
               transition={{ duration: 0.18 }}
               className={cn("flex flex-col gap-1.5", m.role === "user" ? "items-end" : "items-start")}
             >
-              <div
-                data-role={m.role}
-                className={cn(
-                  "max-w-[85%] whitespace-pre-wrap rounded-2xl px-3.5 py-2 text-sm leading-relaxed",
-                  m.role === "user" ? "bg-accent text-white" : "bg-surface-2 text-ink",
-                )}
-              >
-                {m.content}
+              <div className={cn("flex max-w-full items-end gap-2", m.role === "user" ? "flex-row-reverse" : "")}>
+                {m.role === "assistant" ? <IrisAvatar size={22} className="mb-0.5 shrink-0" /> : null}
+                <div
+                  data-role={m.role}
+                  className={cn(
+                    "whitespace-pre-wrap rounded-2xl px-3.5 py-2 text-sm leading-relaxed",
+                    m.role === "user" ? "bg-accent text-white" : "bg-surface-2 text-ink",
+                  )}
+                >
+                  {m.content}
+                </div>
               </div>
               {m.events && m.events.length > 0 ? (
                 <div className="flex max-w-[85%] flex-wrap gap-1.5">
@@ -142,7 +149,7 @@ export function ChatPanel({ email }: { email: string }) {
         </AnimatePresence>
 
         {busy ? (
-          <div className="flex items-center gap-1 self-start rounded-2xl bg-surface-2 px-3.5 py-3" aria-label="focal is typing">
+          <div className="flex items-center gap-1 self-start rounded-2xl bg-surface-2 px-3.5 py-3" aria-label={`${AGENT_NAME} is typing`}>
             {[0, 1, 2].map((d) => (
               <span
                 key={d}
@@ -175,7 +182,7 @@ export function ChatPanel({ email }: { email: string }) {
         placeholders={PLACEHOLDERS}
         onChange={(e) => setDraft(e.target.value)}
         onSubmit={() => void send(draft)}
-        label="Tell focal what you like"
+        label={`Tell ${AGENT_NAME} what you like`}
         submitLabel="Send message"
       />
     </section>

@@ -248,7 +248,15 @@ export async function runPageRank(args: PageRankArgs): Promise<PageRankResult> {
     const d = decisionById.get(clientId);
     const c = resolved.find((r) => r.clientId === clientId);
     if (!d?.badge || !c?.entity) continue;
-    labels.set(clientId, buildLiftLabel(d.badge, scoreById.get(c.entity.entityId)?.contributions, profile));
+    labels.set(
+      clientId,
+      buildLiftLabel(
+        d.badge,
+        scoreById.get(c.entity.entityId)?.contributions,
+        profile,
+        d.favourite === "dislike" ? undefined : d.favourite,
+      ),
+    );
   }
 
   const unresolved = resolved.filter((c) => c.status === "unresolved").length;

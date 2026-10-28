@@ -27,6 +27,9 @@ export interface InsightsParams {
   locationQuery?: string;
   explainability?: boolean;
   take?: number;
+  /** `bias.trends`: nudges results toward what is trending. Live-verified
+   *  2026-10-23 — only "low" | "medium" | "high"; numbers and booleans 400. */
+  biasTrends?: "low" | "medium" | "high";
 }
 export interface ScoreContribution { entityId: string; score: number; }
 export interface ScoredEntity {
@@ -44,8 +47,16 @@ export type DataSource = "live" | "mock";
 export interface QlooClient {
   search(params: SearchParams): Promise<SearchResult>;
   insights(params: InsightsParams): Promise<InsightsResult>;
+  tagAffinities(params: { signalEntityIds: string[]; take?: number }): Promise<TagAffinityResult>;
   searchTags(params: { query: string; take?: number }): Promise<TagSearchResult>;
   getEntities(entityIds: string[]): Promise<{ entities: QlooEntity[]; raw: unknown }>;
 }
+
+export interface TagAffinity {
+  id: string;
+  name: string;
+  affinity?: number;
+}
+export interface TagAffinityResult { tags: TagAffinity[]; durationMs: number; raw: unknown; }
 
 export type QlooErrorCode = "AUTH" | "RATE_LIMIT" | "BAD_REQUEST" | "NOT_FOUND" | "UPSTREAM" | "TIMEOUT" | "PARSE";

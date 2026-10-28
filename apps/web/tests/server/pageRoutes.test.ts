@@ -113,9 +113,16 @@ describe("POST /api/page/rank → GET /api/page/result/:id", () => {
     expect(typeof body.pageResultId).toBe("string");
     const reorder = body.plan.ops.find((o: { op: string }) => o.op === "reorder");
     expect(reorder.order[0]).toBe("c0");
+    // c0 is Rintaro, which the dev profile already likes, so it is labelled as
+    // a favourite rather than given a circular "because you like Rintaro".
     const label = body.plan.ops.find((o: { op: string; clientId?: string }) => o.op === "annotate" && o.clientId === "c0");
-    expect(label.badge).toBe("top-pick");
-    expect(label.text).toMatch(/^Top pick for you/);
+    expect(label.badge).toBe("favourite");
+    expect(label.text).toBe("You like this");
+    // Anything else that lifts is scored, and carries a grounded reason.
+    const scored = body.plan.ops.filter(
+      (o: { op: string; badge?: string }) => o.op === "annotate" && o.badge !== "favourite",
+    );
+    for (const op of scored) expect(op.text).toMatch(/^(Top pick for you|Good match)/);
     expect(JSON.stringify(body.plan)).not.toMatch(/0\.93/);
 
     const stored = await resultGET(req(`/api/page/result/${body.pageResultId}`), { params: Promise.resolve({ id: body.pageResultId }) });

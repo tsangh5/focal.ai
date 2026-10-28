@@ -28,5 +28,7 @@ export const config = {
     "/api/activity/:path*",
     "/api/settings",
     "/api/account",
+    "/api/discover",
+    "/api/taste-context",
   ],
 };

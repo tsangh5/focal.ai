@@ -14,6 +14,7 @@ import type {
   ScoredEntity,
   SearchParams,
   SearchResult,
+  TagAffinityResult,
   TagSearchResult,
 } from "./types";
 
@@ -213,5 +214,21 @@ export function createMockQlooClient(): QlooClient {
     return { entities: mapEntityList(values), raw: entitiesFixture };
   }
 
-  return { search, insights, searchTags, getEntities };
+  /** Labelled fixture tags, so Taste Context renders offline too. */
+  async function tagAffinities(params: {
+    signalEntityIds: string[];
+    take?: number;
+  }): Promise<TagAffinityResult> {
+    await mockDelay();
+    const values = extractTagsArray(tagsNaturalWineFixture) ?? [];
+    const tags = mapTagList(values).map((t, i) => ({
+      id: t.id,
+      name: t.name,
+      // Descending synthetic affinities; mock data carries no real scores.
+      affinity: Math.max(0, 0.99 - i * 0.01),
+    }));
+    return { tags: tags.slice(0, params.take ?? tags.length), durationMs: 0, raw: tagsNaturalWineFixture };
+  }
+
+  return { search, insights, tagAffinities, searchTags, getEntities };
 }

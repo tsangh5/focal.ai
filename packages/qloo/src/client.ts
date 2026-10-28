@@ -1,6 +1,7 @@
 import { cacheKey, createTtlCache } from "./cache";
 import { QlooError } from "./errors";
 import {
+  extractAffinity,
   extractResultsArray,
   extractTagsArray,
   isRecord,
@@ -17,6 +18,8 @@ import type {
   ScoredEntity,
   SearchParams,
   SearchResult,
+  TagAffinity,
+  TagAffinityResult,
   TagSearchResult,
 } from "./types";
 
@@ -174,6 +177,7 @@ export function createQlooClient(opts: {
       addParam(query, "filter.results.entities", params.resultEntityIds.join(","));
     }
     addParam(query, "filter.location.query", params.locationQuery);
+    addParam(query, "bias.trends", params.biasTrends);
     if (params.explainability === true) addParam(query, "feature.explainability", "true");
     addParam(query, "take", clampTake(params.take, INSIGHTS_TAKE_MIN, INSIGHTS_TAKE_MAX) ?? QLOO_DEFAULT_INSIGHTS_TAKE);
 
@@ -192,6 +196,40 @@ export function createQlooClient(opts: {
         result.aggregateExplainability = payload["query"];
       }
       return result;
+    });
+  }
+
+  /**
+   * Descriptive tags for a taste set — Qloo's "Taste Context". Same endpoint as
+   * `insights` but `filter.type=urn:tag`, and the payload puts them under
+   * `results.tags` rather than `results.entities`, so it needs its own parser.
+   */
+  async function tagAffinities(params: {
+    signalEntityIds: string[];
+    take?: number;
+  }): Promise<TagAffinityResult> {
+    const query: Record<string, string> = {};
+    addParam(query, "filter.type", "urn:tag");
+    if (params.signalEntityIds.length > 0) {
+      addParam(query, "signal.interests.entities", params.signalEntityIds.join(","));
+    }
+    addParam(query, "take", clampTake(params.take, INSIGHTS_TAKE_MIN, INSIGHTS_TAKE_MAX) ?? QLOO_DEFAULT_INSIGHTS_TAKE);
+
+    return requestCached("/v2/insights", query, (payload, durationMs) => {
+      const values = extractTagsArray(payload);
+      if (values === undefined) {
+        throw new QlooError("PARSE", "Qloo tag insights response did not contain a results.tags array");
+      }
+      const tags: TagAffinity[] = [];
+      for (const value of values) {
+        if (!isRecord(value)) continue;
+        const id = typeof value["id"] === "string" ? value["id"] : value["tag_id"];
+        const name = value["name"];
+        if (typeof id !== "string" || typeof name !== "string") continue;
+        const affinity = extractAffinity(value);
+        tags.push({ id, name, ...(affinity !== undefined ? { affinity: affinity.value } : {}) });
+      }
+      return { tags, durationMs, raw: payload };
     });
   }
 
@@ -223,7 +261,7 @@ export function createQlooClient(opts: {
     });
   }
 
-  return { search, insights, searchTags, getEntities };
+  return { search, insights, tagAffinities, searchTags, getEntities };
 }
 
 function delay(ms: number): Promise<void> {

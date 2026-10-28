@@ -17,7 +17,8 @@ const securityHeaders = [
       "default-src 'self'",
       `script-src 'self' 'unsafe-inline'${devEval}`,
       "style-src 'self' 'unsafe-inline'",
-      "img-src 'self' data:",
+      // Qloo serves entity artwork (posters, covers, venue photos) from this host.
+      "img-src 'self' data: https://images.qloo.com",
       "connect-src 'self'",
       "object-src 'none'",
       "base-uri 'self'",
@@ -33,6 +34,9 @@ const nextConfig: NextConfig = {
   // Emits .next/standalone for the Docker runner stage. No effect on `next start`.
   output: "standalone",
   transpilePackages: ["@focal-ai/core", "@focal-ai/qloo", "@focal-ai/mcp"],
+  images: {
+    remotePatterns: [{ protocol: "https", hostname: "images.qloo.com", pathname: "/i/**" }],
+  },
   turbopack: {
     rules: {
       "*.css": {

@@ -3,7 +3,7 @@
  * `RenderPlan`). Kept local so the extension bundle never pulls in core's
  * runtime dependencies; the server validates plans before sending them.
  */
-export type Badge = "top-pick" | "good-match";
+export type Badge = "top-pick" | "good-match" | "favourite";
 
 export type RenderOp =
   | { op: "reorder"; containerId: string; order: string[] }
