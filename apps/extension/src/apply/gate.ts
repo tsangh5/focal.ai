@@ -75,15 +75,11 @@ export function createFirstRunGate(container: HTMLElement): RenderGate {
     win?.removeEventListener("scroll", onInteract);
   };
 
-  const timer = setTimeout(() => {
-    reveal();
-    if (settled) return;
-    chip = decorate(doc.createElement("div"), "chip");
-    chip.setAttribute("data-focal", "chip");
-    chip.setAttribute("role", "status");
-    chip.textContent = "focal is ranking…";
-    blockAnchor(container).before(chip);
-  }, GATE_MS);
+  // Reveal the list once the gate expires and say nothing. A "focal is
+  // ranking…" bar announced work the reader did not ask about and, on a slow
+  // page, was the only thing focal ever showed. The result speaks for itself;
+  // a late plan still offers "Apply" below, which is a decision, not a status.
+  const timer = setTimeout(reveal, GATE_MS);
 
   return {
     ready(apply) {

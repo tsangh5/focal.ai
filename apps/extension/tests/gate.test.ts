@@ -27,11 +27,12 @@ describe("first-run gate", () => {
     expect(container.style.visibility).toBe("");
   });
 
-  it("reveals after 300 ms with a ranking chip, then applies if untouched", () => {
+  it("reveals after 300 ms saying nothing, then applies if untouched", () => {
     const gate = createFirstRunGate(container);
     vi.advanceTimersByTime(300);
     expect(container.style.visibility).toBe("");
-    expect(document.querySelector('[data-focal="chip"]')!.textContent).toBe("focal is ranking…");
+    // No status bar: the list is just revealed, and the result speaks for itself.
+    expect(chips()).toHaveLength(0);
     const apply = vi.fn();
     expect(gate.ready(apply)).toBe("late-applied");
     expect(apply).toHaveBeenCalledOnce();
