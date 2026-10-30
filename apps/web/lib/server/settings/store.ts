@@ -1,8 +1,13 @@
 import type { SiteMode } from "@focal-ai/db";
 import { getDb } from "../db";
 
-/** Per-user site lists the extension enforces: never run (skip) and switched off from the toolbar (off). */
+/**
+ * Per-user site lists the extension enforces. Ranking is opt-in, so `siteOn`
+ * is the allowlist that actually lets focal act; `skipSites` suppresses the
+ * offer entirely and `siteOff` records a declined offer.
+ */
 export interface SiteLists {
+  siteOn: string[];
   skipSites: string[];
   siteOff: string[];
 }
@@ -29,13 +34,14 @@ export function cleanHosts(raw: unknown[]): string[] {
 
 const memory = ((globalThis as { __focalSites?: Map<string, SiteLists> }).__focalSites ??= new Map());
 
-const LIST_MODE: Record<keyof SiteLists, SiteMode> = { skipSites: "skip", siteOff: "off" };
+const LIST_MODE: Record<keyof SiteLists, SiteMode> = { siteOn: "on", skipSites: "skip", siteOff: "off" };
 
 export async function loadSites(userId: string, persisted: boolean): Promise<SiteLists> {
   const db = getDb();
-  if (!persisted || !db) return memory.get(userId) ?? { skipSites: [], siteOff: [] };
+  if (!persisted || !db) return memory.get(userId) ?? { siteOn: [], skipSites: [], siteOff: [] };
   const rows = await db.sites.list(userId);
   return {
+    siteOn: rows.filter((r) => r.mode === "on").map((r) => r.hostname),
     skipSites: rows.filter((r) => r.mode === "skip").map((r) => r.hostname),
     siteOff: rows.filter((r) => r.mode === "off").map((r) => r.hostname),
   };
@@ -46,6 +52,7 @@ export async function saveSites(userId: string, persisted: boolean, next: Partia
   const db = getDb();
   const current = await loadSites(userId, persisted);
   const merged: SiteLists = {
+    siteOn: next.siteOn ? cleanHosts(next.siteOn) : current.siteOn,
     skipSites: next.skipSites ? cleanHosts(next.skipSites) : current.skipSites,
     siteOff: next.siteOff ? cleanHosts(next.siteOff) : current.siteOff,
   };
@@ -53,8 +60,9 @@ export async function saveSites(userId: string, persisted: boolean, next: Partia
     memory.set(userId, merged);
     return merged;
   }
-  // One row per host: write "off" first so a host on both lists ends up skipped.
-  for (const list of ["siteOff", "skipSites"] as const) {
+  // One row per host, so the write order decides which list wins a host that
+  // appears on more than one: enabled first, then declined, then skipped.
+  for (const list of ["siteOn", "siteOff", "skipSites"] as const) {
     if (!next[list]) continue;
     const mode = LIST_MODE[list];
     const keep = new Set(merged[list]);

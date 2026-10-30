@@ -54,6 +54,24 @@ const SHEETS = {
 ::slotted(button) { color: #fafafa !important; background: #18181b !important; border: 1px solid #3f3f46 !important; height: 26px !important; }
 ::slotted(button:hover) { background: #27272a !important; }
 `,
+  // Shown before anything is read or sent, so it is quieter than the strip:
+  // an invitation, not a result.
+  offer: `
+:host {
+  display: flex !important; align-items: center !important; gap: 8px !important; margin: 10px 0 !important;
+  padding: 7px 7px 7px 10px !important; border-radius: 12px !important; background: #09090b !important;
+  border: 1px dashed #3f3f46 !important; color: #fafafa !important;
+  box-shadow: 0 8px 24px -16px rgba(0,0,0,.45) !important;
+  animation: focal-in .3s cubic-bezier(.2,.8,.2,1) both !important;
+}
+.mark { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 20px; height: 20px;
+  border-radius: 6px; color: #fff; background: linear-gradient(135deg, #8b74ff, ${VIOLET}); }
+::slotted([data-focal="offer-text"]) { flex: 1 !important; min-width: 0 !important; font: 500 12.5px/1.4 ${FONT} !important; color: #d4d4d8 !important; }
+::slotted([data-focal="enable"]) { color: #fff !important; background: ${VIOLET} !important; border: 1px solid transparent !important; height: 26px !important; border-radius: 999px !important; }
+::slotted([data-focal="enable"]:hover) { background: #7d67e0 !important; }
+::slotted([data-focal="dismiss"]) { color: #a1a1aa !important; background: transparent !important; border: 1px solid transparent !important; height: 26px !important; }
+::slotted([data-focal="dismiss"]:hover) { color: #fafafa !important; background: #18181b !important; }
+`,
   chip: `
 :host {
   display: inline-flex !important; align-items: center !important; gap: 8px !important; margin: 10px 0 !important;
@@ -70,6 +88,7 @@ const SHEETS = {
 const PREFIX: Record<keyof typeof SHEETS, string> = {
   strip: `<span class="mark">${SPARKLE}</span>`,
   fold: "",
+  offer: `<span class="mark">${SPARKLE}</span>`,
   chip: `<span class="spinner" aria-hidden="true"></span>`,
 };
 

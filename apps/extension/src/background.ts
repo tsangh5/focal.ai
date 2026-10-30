@@ -1,6 +1,6 @@
 import type { BackgroundReply, ContentMessage, ExternalMessage } from "./api";
 import { FOCAL_ORIGIN, isTrustedOrigin } from "./config";
-import { parseSettings } from "./settings";
+import { enableSite, parseSettings } from "./settings";
 import { getSession, getSettings, setSession, setSettings, setTabResult } from "./storage";
 
 /** A hung server must not pin a run (and its chip) forever. */
@@ -33,16 +33,16 @@ let settingsFetchedAt = 0;
 let settingsPulling = false;
 
 /**
- * Sites to skip and sites switched off live on the server (edited on the
- * website); keep the local copy fresh so eligibility checks never wait on it.
- * Incognito stays a per-browser choice. One pull at a time: identify calls
- * that arrive while one is out don't start another.
+ * The per-site lists live on the server (edited on the website); keep the
+ * local copy fresh so eligibility checks never wait on it. Incognito stays a
+ * per-browser choice. One pull at a time: identify calls that arrive while one
+ * is out don't start another.
  */
 async function refreshSettings(force = false): Promise<void> {
   if (!force && (settingsPulling || Date.now() - settingsFetchedAt < SETTINGS_REFRESH_MS)) return;
   settingsPulling = true;
   try {
-    const res = await call<{ skipSites: string[]; siteOff: string[] }>("GET", "/api/settings");
+    const res = await call<{ siteOn: string[]; skipSites: string[]; siteOff: string[] }>("GET", "/api/settings");
     if (!res.ok) return;
     const current = await getSettings();
     await setSettings(parseSettings({ ...res.data, incognito: current.incognito }));
@@ -53,8 +53,8 @@ async function refreshSettings(force = false): Promise<void> {
 }
 
 async function pushSettings(): Promise<void> {
-  const { skipSites, siteOff } = await getSettings();
-  await call("PUT", "/api/settings", { skipSites, siteOff });
+  const { siteOn, skipSites, siteOff } = await getSettings();
+  await call("PUT", "/api/settings", { siteOn, skipSites, siteOff });
 }
 
 chrome.runtime.onMessage.addListener((msg: ContentMessage, sender, sendResponse) => {
@@ -76,6 +76,17 @@ chrome.runtime.onMessage.addListener((msg: ContentMessage, sender, sendResponse)
     case "open-why":
       void chrome.tabs.create({ url: `${FOCAL_ORIGIN}/why/${encodeURIComponent(msg.pageResultId)}` });
       return false;
+    case "enable-site": {
+      // Persist first, then mirror to the account so the website's settings
+      // page agrees. The content script re-runs once this resolves.
+      const { host, on } = msg;
+      void getSettings()
+        .then((settings) => setSettings(enableSite(settings, host, on)))
+        .then(() => pushSettings().catch(() => {}))
+        .then(() => sendResponse({ ok: true }))
+        .catch(() => sendResponse({ ok: false, error: "save_failed" }));
+      return true;
+    }
     case "sync-settings":
       void pushSettings().then(() => sendResponse({ ok: true }));
       return true;

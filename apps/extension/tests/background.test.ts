@@ -88,7 +88,7 @@ describe("settings pull", () => {
     expect(pulls()).toBe(1);
     await identify();
     expect(pulls()).toBe(2);
-    expect(local.settings).toEqual({ skipSites: ["reddit.com"], siteOff: [], incognito: false });
+    expect(local.settings).toEqual({ siteOn: [], skipSites: ["reddit.com"], siteOff: [], incognito: false });
     await identify();
     expect(pulls()).toBe(2);
     vi.setSystemTime(Date.now() + 5 * 60 * 1000);

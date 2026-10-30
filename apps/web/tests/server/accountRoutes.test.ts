@@ -87,11 +87,27 @@ describe("activity", () => {
 describe("settings", () => {
   it("normalizes and replaces site lists, for the website and the extension", async () => {
     const put = await routes.settings!.PUT!(req("/api/settings", "PUT", { skipSites: ["https://www.Reddit.com/r/x", "reddit.com", "not a host!"] }));
-    expect(await json(put)).toEqual({ skipSites: ["reddit.com"], siteOff: [] });
+    expect(await json(put)).toEqual({ siteOn: [], skipSites: ["reddit.com"], siteOff: [] });
     const fromExtension = await routes.settings!.PUT!(req("/api/settings", "PUT", { siteOff: ["yelp.com"] }, "dev-token"));
-    expect(await json(fromExtension)).toEqual({ skipSites: ["reddit.com"], siteOff: ["yelp.com"] });
-    expect(await json(await routes.settings!.GET!(req("/api/settings", "GET", undefined, "dev-token")))).toEqual({ skipSites: ["reddit.com"], siteOff: ["yelp.com"] });
+    expect(await json(fromExtension)).toEqual({ siteOn: [], skipSites: ["reddit.com"], siteOff: ["yelp.com"] });
+    expect(await json(await routes.settings!.GET!(req("/api/settings", "GET", undefined, "dev-token")))).toEqual({ siteOn: [], skipSites: ["reddit.com"], siteOff: ["yelp.com"] });
     expect((await routes.settings!.PUT!(req("/api/settings", "PUT", { extra: true }))).status).toBe(400);
+  });
+
+  it("round-trips the opt-in allowlist the extension enforces", async () => {
+    const put = await routes.settings!.PUT!(
+      req("/api/settings", "PUT", { siteOn: ["https://www.Yelp.com/search", "yelp.com", "letterboxd.com"] }),
+    );
+    // Normalized, deduped and sorted, like the other lists.
+    expect(await json(put)).toMatchObject({ siteOn: ["letterboxd.com", "yelp.com"] });
+
+    // Lists left out of a PUT are kept, so the extension can push one at a time.
+    const partial = await routes.settings!.PUT!(req("/api/settings", "PUT", { skipSites: ["reddit.com"] }, "dev-token"));
+    expect(await json(partial)).toMatchObject({ siteOn: ["letterboxd.com", "yelp.com"], skipSites: ["reddit.com"] });
+
+    // Turning a site off is an empty list, not an omitted one.
+    const cleared = await routes.settings!.PUT!(req("/api/settings", "PUT", { siteOn: [] }, "dev-token"));
+    expect(await json(cleared)).toMatchObject({ siteOn: [] });
   });
 });
 
@@ -135,7 +151,7 @@ describe("account", () => {
     await routes.settings!.PUT!(req("/api/settings", "PUT", { skipSites: ["reddit.com"] }));
     await routes.entry!.DELETE!(req("/api/profile/dev-fugazi", "DELETE"), params("dev-fugazi"));
     expect((await routes.account!.DELETE!(req("/api/account", "DELETE"))).status).toBe(204);
-    expect(await json(await routes.settings!.GET!(req("/api/settings")))).toEqual({ skipSites: [], siteOff: [] });
+    expect(await json(await routes.settings!.GET!(req("/api/settings")))).toEqual({ siteOn: [], skipSites: [], siteOff: [] });
     expect((await json(await routes.activity!.GET!(req("/api/activity")))).events).toEqual([]);
   });
 });

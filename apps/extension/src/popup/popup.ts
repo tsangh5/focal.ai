@@ -1,6 +1,6 @@
 import { FOCAL_HOSTS, FOCAL_ORIGIN } from "../config";
 import { checkEligibility } from "../guards/eligibility";
-import { normalizeHost, toggleSite } from "../settings";
+import { isSiteEnabled, normalizeHost, toggleSite } from "../settings";
 import { getSession, getSettings, getTabResult, setSettings } from "../storage";
 import { REASON_TEXT } from "./reasons";
 
@@ -24,14 +24,17 @@ async function main(): Promise<void> {
   const url = tab?.url ?? "";
   const host = url ? normalizeHost(url) : "";
   const toggle = $<HTMLInputElement>("site-toggle");
-  $("site-label").textContent = host ? `On for ${host}` : "This site";
+  $("site-label").textContent = host ? `Enable focal for ${host}` : "This site";
+  // Ignore the declined list here: the toggle is how a declined site gets
+  // turned back on, so it must stay usable.
   const check = checkEligibility({ url, settings: { ...settings, siteOff: [] }, incognito: !!tab?.incognito, focalHosts: FOCAL_HOSTS });
   if (!check.eligible) {
     toggle.disabled = true;
     toggle.checked = false;
     $("site-status").textContent = REASON_TEXT[check.reason.kind];
   } else {
-    toggle.checked = !settings.siteOff.includes(host);
+    toggle.checked = isSiteEnabled(settings, host);
+    $("site-status").textContent = toggle.checked ? "" : "focal is off here until you turn it on.";
     toggle.addEventListener("change", async () => {
       await setSettings(toggleSite(await getSettings(), host, toggle.checked));
       // Keep the account's copy in step so the website's settings page shows it.

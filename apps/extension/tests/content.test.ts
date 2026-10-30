@@ -15,7 +15,12 @@ const NAMES = ["Rintaro", "Ippudo", "Chuko", "Okonomi"];
  * answers with `rank`.
  */
 function stubChrome(rank: Partial<RankResponse>, stored?: LearnedLayout) {
-  const data: Record<string, unknown> = stored ? { layouts: { [KEY]: { ...stored, savedAt: new Date().toISOString() } } } : {};
+  // Ranking is opt-in per site, so these tests start from a host the user has
+  // already enabled; the offer path is covered separately.
+  const data: Record<string, unknown> = {
+    settings: { siteOn: [location.hostname.replace(/^www\./, "")] },
+    ...(stored ? { layouts: { [KEY]: { ...stored, savedAt: new Date().toISOString() } } } : {}),
+  };
   const sent: ContentMessage[] = [];
   vi.stubGlobal("chrome", {
     extension: { inIncognitoContext: false },

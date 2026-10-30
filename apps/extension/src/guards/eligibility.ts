@@ -21,7 +21,14 @@ export interface EligibilityInput {
   document?: ParentNode;
 }
 
-/** Guards run before any extraction; a blocked page sends nothing anywhere. */
+/**
+ * Guards run before any extraction; a blocked page sends nothing anywhere.
+ *
+ * This answers "may focal act on this page at all", not "has the user turned
+ * it on here". Ranking is opt-in per site, and that choice is checked
+ * separately (`isSiteEnabled`) so the toolbar can still offer a site that
+ * passes policy but has not been enabled yet.
+ */
 export function checkEligibility(input: EligibilityInput): Eligibility {
   let url: URL;
   try {

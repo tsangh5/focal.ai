@@ -1,12 +1,14 @@
 import type { BackgroundReply, ContentMessage, FeedbackResponse, IdentifyResponse, RankResponse } from "./api";
 import { pathPattern } from "./api";
-import { applyPlan, type ApplyHandle, type ApplyOptions, type ApplyTarget } from "./apply/apply";
+import { applyPlan, FOCAL_ATTR, focalTrusted, type ApplyHandle, type ApplyOptions, type ApplyTarget } from "./apply/apply";
 import { createFirstRunGate, createRerunGate, type RenderGate } from "./apply/gate";
+import { blockAnchor, decorate } from "./apply/ui";
 import { FOCAL_HOSTS } from "./config";
 import { cityHints, detectList, extractSnippets, snapshotCards, type DetectedList } from "./detect/detect";
 import { checkEligibility } from "./guards/eligibility";
 import { applyLayout } from "./layouts/apply";
 import { deleteLayout, getLayout, layoutKey, saveLayout } from "./layouts/store";
+import { isSiteEnabled } from "./settings";
 import { getSettings } from "./storage";
 import type { RenderOp, RenderPlan } from "./types";
 
@@ -181,6 +183,55 @@ function watch(container: Element, cards: Iterable<Element>): void {
   if (container.parentElement) watcher.observe(container.parentElement, { childList: true });
 }
 
+let offer: HTMLElement | null = null;
+
+/**
+ * "Enable focal for example.com" — shown above a list focal could rank on a
+ * site the user has not enabled. Nothing has been read or sent at this point
+ * and nothing will be unless they accept.
+ */
+function showOffer(container: Element): void {
+  if (offer?.isConnected) return;
+  const doc = container.ownerDocument;
+  const host = location.hostname.replace(/^www\./, "");
+  const el = decorate(doc.createElement("div"), "offer");
+  el.setAttribute(FOCAL_ATTR, "offer");
+  el.setAttribute("role", "status");
+
+  const text = doc.createElement("span");
+  text.setAttribute(FOCAL_ATTR, "offer-text");
+  text.textContent = `Sort this list by your taste? focal is off for ${host}.`;
+
+  const enable = doc.createElement("button");
+  enable.type = "button";
+  enable.setAttribute(FOCAL_ATTR, "enable");
+  enable.textContent = `Enable for ${host}`;
+  enable.addEventListener("click", (ev) => {
+    if (!focalTrusted(ev, el)) return;
+    void send({ type: "enable-site", host, on: true }).then(() => {
+      el.remove();
+      offer = null;
+      void run();
+    });
+  });
+
+  const dismiss = doc.createElement("button");
+  dismiss.type = "button";
+  dismiss.setAttribute(FOCAL_ATTR, "dismiss");
+  dismiss.textContent = "Not now";
+  dismiss.addEventListener("click", (ev) => {
+    if (!focalTrusted(ev, el)) return;
+    void send({ type: "enable-site", host, on: false }).then(() => {
+      el.remove();
+      offer = null;
+    });
+  });
+
+  el.append(text, enable, dismiss);
+  blockAnchor(container).before(el);
+  offer = el;
+}
+
 function watchPage(): void {
   watcher?.disconnect();
   watcher = new MutationObserver((records) => {
@@ -197,6 +248,9 @@ function standDown(clearResult = false): void {
   epoch++;
   activeGate?.cancel();
   activeGate = null;
+  // A pending offer belongs to the list that just went away.
+  offer?.remove();
+  offer = null;
   const live = current;
   current = null; // first: undo() writes to the DOM
   live?.handle.undo();
@@ -337,6 +391,17 @@ async function runPass(): Promise<void> {
       lastList = null;
       return watchPage();
     }
+
+    // Ranking is opt-in per site. Detection is a local DOM scan, so we can
+    // tell the page has a list worth ranking and offer to turn focal on here
+    // without reading or sending anything. Identify only runs once accepted.
+    if (!isSiteEnabled(settings, location.hostname)) {
+      standDown();
+      lastList = null;
+      showOffer(detected.container);
+      return;
+    }
+
     const list = withStableIds(detected);
     // The user put this list back: keep watching it, never rank it again on this page.
     if (userUndidFor === list.container) return rebaseline(list);

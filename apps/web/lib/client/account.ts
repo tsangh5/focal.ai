@@ -5,6 +5,8 @@ export interface ActivityItem extends ActivityEvent {
 }
 
 export interface SiteLists {
+  /** Hosts focal is enabled on. Ranking is opt-in, so this is the allowlist. */
+  siteOn: string[];
   skipSites: string[];
   siteOff: string[];
 }

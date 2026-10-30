@@ -5,6 +5,7 @@ import { loadSites, MAX_SITES, saveSites } from "@/lib/server/settings/store";
 
 const putSchema = z
   .object({
+    siteOn: z.array(z.string().max(300)).max(MAX_SITES).optional(),
     skipSites: z.array(z.string().max(300)).max(MAX_SITES).optional(),
     siteOff: z.array(z.string().max(300)).max(MAX_SITES).optional(),
   })

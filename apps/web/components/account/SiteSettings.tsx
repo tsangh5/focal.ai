@@ -80,6 +80,24 @@ export function SkipSites({ extensionId }: { extensionId: string }) {
       ) : null}
       <Card>
         <CardHeader>
+          <CardTitle>Sites focal is on for</CardTitle>
+          <CardDescription>
+            focal is off everywhere until you turn it on. When a page has a list it could sort, it offers to enable
+            itself for that site; nothing is read or sent until you accept.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <HostList
+            hosts={sites.siteOn}
+            action="Turn off"
+            busy={busy}
+            empty="None yet. focal will offer when it finds a list it can sort."
+            onAction={(h) => void save({ siteOn: sites.siteOn.filter((s) => s !== h) })}
+          />
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader>
           <CardTitle>Sites to skip</CardTitle>
           <CardDescription>
             focal never reads or changes these sites. It already never runs on banking, health, government, email, messaging,
@@ -110,8 +128,8 @@ export function SkipSites({ extensionId }: { extensionId: string }) {
       </Card>
       <Card>
         <CardHeader>
-          <CardTitle>Switched off from the toolbar</CardTitle>
-          <CardDescription>Sites you turned focal off for in the extension&apos;s menu.</CardDescription>
+          <CardTitle>Offers you declined</CardTitle>
+          <CardDescription>Sites where you said &ldquo;not now&rdquo;. focal will not offer again unless you turn it back on.</CardDescription>
         </CardHeader>
         <CardContent>
           <HostList

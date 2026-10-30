@@ -4,7 +4,16 @@ import { checkEligibility } from "../src/guards/eligibility";
 import { hasSensitiveField } from "../src/guards/fields";
 import { matchNeverRun } from "@focal-ai/core/neverRun";
 import { isTrustedOrigin } from "../src/config";
-import { DEFAULT_SETTINGS, hostMatches, normalizeHost, parseSettings, toggleSite } from "../src/settings";
+import {
+  DEFAULT_SETTINGS,
+  enableSite,
+  hostMatches,
+  isSiteEnabled,
+  normalizeHost,
+  parseSettings,
+  toggleSite,
+  type Settings,
+} from "../src/settings";
 
 const doc = (html: string) => new JSDOM(`<body>${html}</body>`).window.document;
 const base = { settings: DEFAULT_SETTINGS, incognito: false };
@@ -222,7 +231,12 @@ describe("settings helpers", () => {
   });
   it("parses junk safely", () => {
     expect(parseSettings(null)).toEqual(DEFAULT_SETTINGS);
-    expect(parseSettings({ skipSites: ["a.com", 3, "A.com"], incognito: "yes" })).toEqual({ skipSites: ["a.com"], siteOff: [], incognito: false });
+    expect(parseSettings({ skipSites: ["a.com", 3, "A.com"], incognito: "yes" })).toEqual({
+      siteOn: [],
+      skipSites: ["a.com"],
+      siteOff: [],
+      incognito: false,
+    });
   });
 });
 
@@ -243,5 +257,50 @@ describe("trusted origins for the /connect handoff", () => {
     ]) {
       expect(isTrustedOrigin(o), String(o)).toBe(false);
     }
+  });
+});
+
+describe("per-site opt-in", () => {
+  const base: Settings = { siteOn: [], skipSites: [], siteOff: [], incognito: false };
+
+  it("is off until the host is enabled", () => {
+    expect(isSiteEnabled(base, "yelp.com")).toBe(false);
+    expect(isSiteEnabled({ ...base, siteOn: ["yelp.com"] }, "yelp.com")).toBe(true);
+  });
+
+  it("covers subdomains of an enabled host", () => {
+    const on = { ...base, siteOn: ["yelp.com"] };
+    expect(isSiteEnabled(on, "www.yelp.com")).toBe(true);
+    expect(isSiteEnabled(on, "uk.yelp.com")).toBe(true);
+    expect(isSiteEnabled(on, "notyelp.com")).toBe(false);
+    // A look-alike parent must not be enabled by a child.
+    expect(isSiteEnabled({ ...base, siteOn: ["uk.yelp.com"] }, "yelp.com")).toBe(false);
+  });
+
+  it("enabling clears a previous decline, and declining clears a previous enable", () => {
+    const declined = enableSite(base, "Yelp.com", false);
+    expect(declined).toMatchObject({ siteOn: [], siteOff: ["yelp.com"] });
+
+    const enabled = enableSite(declined, "yelp.com", true);
+    expect(enabled).toMatchObject({ siteOn: ["yelp.com"], siteOff: [] });
+
+    const again = enableSite(enabled, "yelp.com", false);
+    expect(again).toMatchObject({ siteOn: [], siteOff: ["yelp.com"] });
+  });
+
+  it("never enables a host the never-run list covers", () => {
+    // Policy wins over preference: enabling google.com cannot make focal run.
+    const on = { ...base, siteOn: ["google.com"] };
+    expect(isSiteEnabled(on, "google.com")).toBe(true);
+    expect(
+      checkEligibility({ settings: on, incognito: false, url: "https://www.google.com/search?q=ramen" }).eligible,
+    ).toBe(false);
+  });
+
+  it("a declined or skipped host stays ineligible even if also enabled", () => {
+    const skipped = { ...base, siteOn: ["yelp.com"], skipSites: ["yelp.com"] };
+    expect(checkEligibility({ settings: skipped, incognito: false, url: "https://www.yelp.com/search" }).eligible).toBe(
+      false,
+    );
   });
 });

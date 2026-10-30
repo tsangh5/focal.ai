@@ -87,6 +87,8 @@ export type ContentMessage =
   /** A null id clears the tab's result: its page or plan is gone. */
   | { type: "page-result"; pageResultId: string | null; lifted: number }
   | { type: "open-why"; pageResultId: string }
+  /** The on-page offer: turn focal on for this host, or decline it. */
+  | { type: "enable-site"; host: string; on: boolean }
   | { type: "sync-settings" };
 
 export type BackgroundReply<T> = { ok: true; data: T } | { ok: false; error: string; status?: number };

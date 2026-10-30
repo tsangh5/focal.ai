@@ -43,6 +43,10 @@ function stubChrome(opts: { rank?: Handler; identify?: Handler; settingsGate?: P
       local: {
         get: async (key: string) => {
           if (key === "settings" && opts.settingsGate) await opts.settingsGate;
+          // Ranking is opt-in per site; these tests exercise the run loop on a
+          // host the user has already enabled. The offer path is covered in
+          // guards.test.ts.
+          if (key === "settings") return { settings: { siteOn: [location.hostname.replace(/^www\./, "")] } };
           return {};
         },
         set: async () => {},
