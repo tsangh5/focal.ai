@@ -36,7 +36,7 @@ test.describe("landing and header", () => {
       ["Profile", "/profile", "Your taste"],
       ["Activity", "/activity", "Activity"],
       ["Settings", "/settings", "Settings"],
-      ["Chat", "/chat", "Tell focal what you like"],
+      ["Chat", "/chat", "Tell Iris what you like"],
     ] as const) {
       await page.getByRole("navigation", { name: "Site" }).getByRole("link", { name, exact: true }).click();
       await expect(page).toHaveURL(`${WEB}${path}`);
@@ -69,7 +69,7 @@ test.describe("landing and header", () => {
 test.describe("chat", () => {
   test("controls are labelled, and a missing model is reported", async ({ page }) => {
     await page.goto("/chat");
-    await expect(page.getByRole("textbox", { name: "Tell focal what you like" })).toBeVisible();
+    await expect(page.getByRole("textbox", { name: "Tell Iris what you like" })).toBeVisible();
     await page.getByRole("button", { name: "I love Fugazi" }).click();
     await expect(page.getByText("Chat isn't configured on this server yet.")).toBeVisible();
   });
@@ -79,7 +79,7 @@ test.describe("chat", () => {
       route.fulfill({ json: { reply: "Saved Fugazi as a love.", events: [], provider: "groq" } }),
     );
     await page.goto("/chat");
-    await page.getByRole("textbox", { name: "Tell focal what you like" }).fill("I love Fugazi");
+    await page.getByRole("textbox", { name: "Tell Iris what you like" }).fill("I love Fugazi");
     await page.getByRole("button", { name: "Send message" }).click();
     await expect(page.locator('[data-role="assistant"]').filter({ hasText: "Saved Fugazi as a love." })).toBeVisible();
   });
@@ -162,7 +162,7 @@ test.describe("onboarding", () => {
     await page.goto("/onboarding");
     const steps = page.getByRole("navigation", { name: "Onboarding steps" });
     await expect(steps.getByRole("button", { name: "1. Your taste" })).toHaveAttribute("aria-current", "step");
-    await expect(page.getByRole("heading", { name: "Tell focal what you like" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Tell Iris what you like" })).toBeVisible();
     await page.getByRole("button", { name: "Next", exact: true }).click();
     await expect(page.getByText("Sites to skip", { exact: true })).toBeVisible();
     await page.getByRole("button", { name: "Next", exact: true }).click();

@@ -45,12 +45,11 @@ test.describe("reorder, labels, strip, undo", () => {
     expect(await domOrder(page, ".biz")).toEqual(ORIGINAL);
     const got = await labels(page, ".biz");
     expect(Object.keys(got)).toEqual(["Rintaro"]);
-    expect(got.Rintaro).toMatchObject({ badge: "top-pick" });
-    const reason = await page.$eval('.biz[data-name="Rintaro"] [data-focal="label"]', (h) => {
-      const span = h.shadowRoot!.querySelector("span")!;
-      return `${span.textContent} ${span.title}`;
-    });
-    expect(reason).toContain("because you like Fugazi");
+    // The demo profile likes Rintaro outright, so the label is the favourite
+    // badge saying so directly rather than a grounded "because you like X".
+    // `labels()` already reads the span inside the label's shadow root; the
+    // tooltip only carries the reason on compact tiles, not a flex list.
+    expect(got.Rintaro).toMatchObject({ badge: "favourite", text: "You like this" });
 
     await page.locator('[data-focal="undo"]').click();
     await expect(page.locator("[data-focal]")).toHaveCount(0);
