@@ -9,8 +9,11 @@ import { checkRateLimit } from "@/lib/server/rateLimit";
 
 const RATE_LIMIT = { limit: 20, windowMs: 60000 };
 const TAG_TAKE = 18;
-/** Pairwise affinity costs one Qloo call per (source, target type), so cap it. */
-const MAX_NODES = 6;
+/**
+ * Qloo scores at most 50 pinned results per call, so a type with more entries
+ * than this is scored for the first 50 and the rest become unscored nodes.
+ */
+const MAX_PER_TYPE = 50;
 
 export interface TasteTag {
   name: string;
@@ -20,9 +23,12 @@ export interface TasteTag {
 export interface TasteNode {
   id: string;
   name: string;
+  /** Short type name, which is also the cluster the node belongs to. */
   type: string;
   strength: string;
   imageUrl?: string;
+  /** How well the rest of the profile predicts this entry, 0..1. */
+  affinity?: number;
 }
 
 export interface TasteEdge {
@@ -47,44 +53,61 @@ async function tasteTags(signalIds: string[]): Promise<TasteTag[]> {
 }
 
 /**
- * Directed affinity between the user's own entries. Qloo scores a pinned
- * result set against a signal, so one call per (source, target type) gives a
- * row of the matrix. Affinity is asymmetric — Fugazi→Rintaro 0.75 but
- * Rintaro→Fugazi 0.83 — so both directions are kept and the stronger wins.
+ * Scores and edges for the whole profile in one call per type.
+ *
+ * For each type, the entries of that type are the pinned results and
+ * everything else in the profile is the signal — so one call covers every
+ * entry of that type at once, and the cost is the number of distinct types
+ * (at most ten) rather than N x T pairwise calls. That is what lets the graph
+ * show every node instead of a handful.
+ *
+ * `feature.explainability` then says which entries drove each score, and those
+ * contributions are the edges: real cross-domain links, not a guess. Shared
+ * tags cannot do this — Qloo's tags are domain-specific, so a band and a
+ * restaurant have none in common even when their affinity is high.
  */
-async function tasteEdges(things: ThingEntry[]): Promise<TasteEdge[]> {
+async function scoreAndLink(things: ThingEntry[]): Promise<{ scores: Map<string, number>; edges: TasteEdge[] }> {
   const client = getQlooClient();
   const byType = new Map<string, ThingEntry[]>();
-  for (const t of things) {
-    byType.set(t.type, [...(byType.get(t.type) ?? []), t]);
-  }
+  for (const t of things) byType.set(t.type, [...(byType.get(t.type) ?? []), t]);
+  const known = new Set(things.map((t) => t.qlooId));
+
+  const scores = new Map<string, number>();
   const edges = new Map<string, TasteEdge>();
-  for (const source of things) {
-    for (const [type, targets] of byType) {
-      const ids = targets.filter((t) => t.qlooId !== source.qlooId).map((t) => t.qlooId);
-      if (ids.length === 0) continue;
+
+  await Promise.all(
+    [...byType].map(async ([type, targets]) => {
+      const signals = things.filter((t) => t.type !== type);
+      // Qloo leaves signal entities out of its own results, so an entry cannot
+      // be scored against itself or its own type-mates.
+      if (signals.length === 0) return;
       try {
         const res = await client.insights({
           resultType: type as InsightType,
-          signalEntityIds: [source.qlooId],
-          resultEntityIds: ids,
-          take: ids.length,
+          signalEntityIds: signals.map((s) => s.qlooId),
+          resultEntityIds: targets.slice(0, MAX_PER_TYPE).map((t) => t.qlooId),
+          explainability: true,
+          take: Math.min(MAX_PER_TYPE, targets.length),
         });
         for (const scored of res.entities) {
-          if (scored.affinity === undefined) continue;
-          // Undirected display: keep the stronger of the two directions.
-          const key = [source.qlooId, scored.entity.entityId].sort().join("|");
-          const existing = edges.get(key);
-          if (!existing || scored.affinity > existing.affinity) {
-            edges.set(key, { from: source.qlooId, to: scored.entity.entityId, affinity: scored.affinity });
+          const id = scored.entity.entityId;
+          if (scored.affinity !== undefined) scores.set(id, scored.affinity);
+          for (const c of scored.contributions ?? []) {
+            if (!known.has(c.entityId) || c.entityId === id) continue;
+            // One edge per pair, keeping the stronger direction.
+            const key = [id, c.entityId].sort().join("|");
+            const existing = edges.get(key);
+            if (!existing || c.score > existing.affinity) {
+              edges.set(key, { from: c.entityId, to: id, affinity: c.score });
+            }
           }
         }
       } catch {
-        // One missing row should not fail the whole graph.
+        // One type failing leaves its nodes unscored rather than emptying the graph.
       }
-    }
-  }
-  return [...edges.values()].sort((a, b) => b.affinity - a.affinity);
+    }),
+  );
+  return { scores, edges: [...edges.values()].sort((a, b) => b.affinity - a.affinity) };
 }
 
 export async function GET(): Promise<Response> {
@@ -109,28 +132,28 @@ export async function GET(): Promise<Response> {
     return Response.json({ tags: [], nodes: [], edges: [], summary: null, reason: "empty" });
   }
 
-  const graphThings = things.slice(0, MAX_NODES);
-  const nodes: TasteNode[] = graphThings.map((t) => {
-    const imageUrl = qlooImageUrl(t.qlooId);
-    return {
-      id: t.qlooId,
-      name: t.name,
-      type: label(t.type),
-      strength: t.strength,
-      ...(imageUrl ? { imageUrl } : {}),
-    };
-  });
-
   try {
-    const [tags, edges] = await Promise.all([
-      tasteTags(things.map((t) => t.qlooId)),
-      tasteEdges(graphThings),
-    ]);
+    const [tags, linked] = await Promise.all([tasteTags(things.map((t) => t.qlooId)), scoreAndLink(things)]);
+
+    // Every entry becomes a node, scored where Qloo could score it.
+    const nodes: TasteNode[] = things.map((t) => {
+      const imageUrl = qlooImageUrl(t.qlooId);
+      const affinity = linked.scores.get(t.qlooId);
+      return {
+        id: t.qlooId,
+        name: t.name,
+        type: label(t.type),
+        strength: t.strength,
+        ...(imageUrl ? { imageUrl } : {}),
+        ...(affinity !== undefined ? { affinity } : {}),
+      };
+    });
+
     const summary = await runSummary(
       things.map((t) => t.name),
       tags.map((t) => t.name),
     );
-    return Response.json({ tags, nodes, edges, summary, truncated: things.length > MAX_NODES });
+    return Response.json({ tags, nodes, edges: linked.edges, summary });
   } catch (e) {
     return errorResponse(e);
   }
