@@ -60,6 +60,11 @@ export function parseSettings(raw: unknown): Settings {
   };
 }
 
+/** Replays site decisions not yet stored on the account over `settings`. */
+export function applyPendingSites(settings: Settings, pending: Record<string, boolean>): Settings {
+  return Object.entries(pending).reduce((acc, [host, on]) => enableSite(acc, host, on), settings);
+}
+
 /** Toolbar toggle. Under opt-in this is the same decision as the on-page offer. */
 export function toggleSite(settings: Settings, host: string, on: boolean): Settings {
   return enableSite(settings, host, on);

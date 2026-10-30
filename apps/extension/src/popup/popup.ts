@@ -1,7 +1,7 @@
 import { FOCAL_HOSTS, FOCAL_ORIGIN } from "../config";
 import { checkEligibility } from "../guards/eligibility";
-import { isSiteEnabled, normalizeHost, toggleSite } from "../settings";
-import { getSession, getSettings, getTabResult, setSettings } from "../storage";
+import { isSiteEnabled, normalizeHost } from "../settings";
+import { getSession, getSettings, getTabResult } from "../storage";
 import { OUTCOME_TEXT, REASON_TEXT } from "./reasons";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -36,9 +36,9 @@ async function main(): Promise<void> {
     toggle.checked = isSiteEnabled(settings, host);
     $("site-status").textContent = toggle.checked ? "" : "focal is off here until you turn it on.";
     toggle.addEventListener("change", async () => {
-      await setSettings(toggleSite(await getSettings(), host, toggle.checked));
-      // Keep the account's copy in step so the website's settings page shows it.
-      if (session) void chrome.runtime.sendMessage({ type: "sync-settings" }).catch(() => {});
+      // The worker saves it here and on the account, and keeps it pending until
+      // the account has it, so signing in later can't undo it.
+      await chrome.runtime.sendMessage({ type: "enable-site", host, on: toggle.checked }).catch(() => {});
       if (tab?.id !== undefined) await chrome.tabs.reload(tab.id);
     });
   }
