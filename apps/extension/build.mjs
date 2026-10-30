@@ -6,7 +6,18 @@ import { build } from "esbuild";
 
 const root = dirname(fileURLToPath(import.meta.url));
 const out = join(root, "dist");
-const origin = (process.env.FOCAL_ORIGIN ?? "http://localhost:3000").replace(/\/$/, "");
+/**
+ * Website and API origin, baked in at build time. Defaults to the deployed
+ * site, not localhost: this value decides where the popup's links go *and*
+ * where every API call goes, so a default of localhost meant `pnpm build` —
+ * and `pnpm zip`, which produces the Chrome Web Store artifact — silently
+ * shipped an extension that talks to a dev server.
+ *
+ * For local development, set it explicitly:
+ *   FOCAL_ORIGIN=http://localhost:3000 pnpm build
+ */
+const DEFAULT_ORIGIN = "https://focal-ai.vercel.app";
+const origin = (process.env.FOCAL_ORIGIN ?? DEFAULT_ORIGIN).replace(/\/$/, "");
 /** Shipped sites, always trusted for the /connect handoff regardless of build origin. */
 const PUBLIC_ORIGINS = ["https://focal-ai.vercel.app/*", "https://focal.ai/*"];
 const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));

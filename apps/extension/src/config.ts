@@ -1,8 +1,15 @@
 declare const __FOCAL_ORIGIN__: string | undefined;
 
-/** focal website / API origin, injected at build time (FOCAL_ORIGIN). */
+/**
+ * focal website / API origin, injected at build time (FOCAL_ORIGIN).
+ *
+ * The fallback is the deployed site and must stay in step with
+ * `DEFAULT_ORIGIN` in build.mjs. It is reached only when the define is
+ * missing — a unit test importing this module, say — so defaulting to
+ * localhost here would make tests disagree with every real build.
+ */
 export const FOCAL_ORIGIN: string =
-  typeof __FOCAL_ORIGIN__ === "string" && __FOCAL_ORIGIN__ ? __FOCAL_ORIGIN__ : "http://localhost:3000";
+  typeof __FOCAL_ORIGIN__ === "string" && __FOCAL_ORIGIN__ ? __FOCAL_ORIGIN__ : "https://focal-ai.vercel.app";
 
 /**
  * Hosts focal must never rank: its own website.

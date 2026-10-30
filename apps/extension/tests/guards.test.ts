@@ -244,9 +244,18 @@ describe("settings helpers", () => {
 
 describe("trusted origins for the /connect handoff", () => {
   it("accepts the build origin and the deployed sites", () => {
-    for (const o of ["http://localhost:3000", "https://focal-ai.vercel.app", "https://focal.ai"]) {
+    for (const o of ["https://focal-ai.vercel.app", "https://focal.ai"]) {
       expect(isTrustedOrigin(o), o).toBe(true);
     }
+  });
+
+  /**
+   * The build origin defaults to the deployed site, so a default build must
+   * not hand a session to a dev server. localhost becomes trusted only in a
+   * build that asked for it with FOCAL_ORIGIN.
+   */
+  it("does not trust localhost unless it is the build origin", () => {
+    expect(isTrustedOrigin("http://localhost:3000")).toBe(false);
   });
 
   it("rejects look-alikes, subdomains and missing origins", () => {
