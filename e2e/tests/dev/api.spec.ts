@@ -92,7 +92,7 @@ test.describe("profile, activity and settings APIs", () => {
 
   test("settings are shared by the website and the extension", async ({ request }) => {
     const saved = await (await request.put("/api/settings", { data: { skipSites: ["https://www.Reddit.com/r/x"] } })).json();
-    expect(saved).toEqual({ skipSites: ["reddit.com"], siteOff: [] });
+    expect(saved).toEqual({ siteOn: [], skipSites: ["reddit.com"], siteOff: [] });
     expect(await (await request.get("/api/settings", { headers: AUTH })).json()).toEqual(saved);
   });
 });
