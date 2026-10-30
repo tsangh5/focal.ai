@@ -4,7 +4,6 @@ import { runSummary } from "@/lib/server/chat/summary";
 import { getDb } from "@/lib/server/db";
 import { errorResponse } from "@/lib/server/errors";
 import { getQlooClient } from "@/lib/server/qloo";
-import { qlooImageUrl } from "@/lib/server/qlooImage";
 import { checkRateLimit } from "@/lib/server/rateLimit";
 
 const RATE_LIMIT = { limit: 20, windowMs: 60000 };
@@ -26,7 +25,6 @@ export interface TasteNode {
   /** Short type name, which is also the cluster the node belongs to. */
   type: string;
   strength: string;
-  imageUrl?: string;
   /** How well the rest of the profile predicts this entry, 0..1. */
   affinity?: number;
 }
@@ -137,14 +135,12 @@ export async function GET(): Promise<Response> {
 
     // Every entry becomes a node, scored where Qloo could score it.
     const nodes: TasteNode[] = things.map((t) => {
-      const imageUrl = qlooImageUrl(t.qlooId);
       const affinity = linked.scores.get(t.qlooId);
       return {
         id: t.qlooId,
         name: t.name,
         type: label(t.type),
         strength: t.strength,
-        ...(imageUrl ? { imageUrl } : {}),
         ...(affinity !== undefined ? { affinity } : {}),
       };
     });

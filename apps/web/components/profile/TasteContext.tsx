@@ -16,7 +16,6 @@ export interface TasteNode {
   /** Short type name, which is also the cluster the node sits in. */
   type: string;
   strength: string;
-  imageUrl?: string;
   /** How well the rest of the profile predicts this entry, 0..1. */
   affinity?: number;
 }
@@ -34,7 +33,8 @@ interface ContextResponse {
 }
 
 const SIZE = 640;
-const NODE_R = 15;
+/** A dot, not a disc: Obsidian's nodes are small against the canvas. */
+const NODE_R = 7;
 const MIN_ZOOM = 0.4;
 const MAX_ZOOM = 6;
 
@@ -273,9 +273,12 @@ function GraphView({ nodes, edges }: { nodes: TasteNode[]; edges: TasteEdge[] })
                   y1={a.y}
                   x2={b.x}
                   y2={b.y}
-                  stroke="var(--color-accent, #6E56CF)"
-                  strokeWidth={(0.8 + weight * 2.6) / view.k}
-                  strokeOpacity={active ? 0.2 + weight * 0.5 : 0.06}
+                  // Thin and neutral, like Obsidian: the links are structure,
+                  // not the subject. Affinity is already in the distance, so
+                  // weight only nudges the opacity.
+                  stroke="var(--color-ink, #fafafa)"
+                  strokeWidth={1 / view.k}
+                  strokeOpacity={active ? 0.1 + weight * 0.22 : 0.04}
                   strokeLinecap="round"
                 />
               );
@@ -283,57 +286,40 @@ function GraphView({ nodes, edges }: { nodes: TasteNode[]; edges: TasteEdge[] })
 
             {placed.map((n) => {
               const dim = linked !== null && !linked.has(n.id);
-              // Size by number of links, as Obsidian does, nudged by how well
-              // the rest of the profile predicts it.
-              const r = NODE_R * (0.72 + Math.min(1, n.degree / 6) * 0.5 + (n.affinity ?? 0.5) * 0.22);
+              const isHover = hover === n.id;
+              // Size by number of links, as Obsidian does.
+              const r = NODE_R * (0.72 + Math.min(1, n.degree / 6) * 0.5);
               return (
                 <g
                   key={n.id}
-                  opacity={dim ? 0.3 : 1}
                   onPointerEnter={() => setHover(n.id)}
                   onPointerLeave={() => setHover(null)}
                 >
-                  {n.imageUrl ? (
-                    <>
-                      <clipPath id={`clip-${n.id}`}>
-                        <circle cx={n.x} cy={n.y} r={r} />
-                      </clipPath>
-                      <image
-                        href={n.imageUrl}
-                        x={n.x - r}
-                        y={n.y - r}
-                        width={r * 2}
-                        height={r * 2}
-                        clipPath={`url(#clip-${n.id})`}
-                        preserveAspectRatio="xMidYMin slice"
-                      />
-                    </>
-                  ) : (
-                    <circle cx={n.x} cy={n.y} r={r} fill="var(--color-surface-2, #27272a)" />
-                  )}
-                  <circle cx={n.x} cy={n.y} r={r} fill="none" stroke="var(--color-canvas, #09090b)" strokeWidth={2 / view.k} />
+                  {/* A plain filled dot. Artwork in the nodes made a dense
+                      graph unreadable — ten competing photographs rather than
+                      a shape you can follow. */}
                   <circle
                     cx={n.x}
                     cy={n.y}
-                    r={r + 1}
-                    fill="none"
-                    stroke="var(--color-accent, #6E56CF)"
-                    strokeOpacity={n.strength === "love" ? 0.9 : 0.35}
-                    strokeWidth={(n.strength === "love" ? 2 : 1) / view.k}
+                    r={r}
+                    fill={isHover ? "var(--color-accent, #6E56CF)" : "var(--color-ink, #fafafa)"}
+                    fillOpacity={dim ? 0.25 : n.strength === "love" ? 1 : 0.78}
                   />
-                  {/* Labels only when zoomed in or hovered: at 1x with many
-                      nodes they overlap into noise. */}
-                  {view.k > 1.4 || hover === n.id ? (
+                  {/* Labels follow the dot, and only show when there is room:
+                      zoomed past 1.4x, hovered, or a well-connected node. */}
+                  {view.k > 1.4 || isHover || (linked?.has(n.id) ?? false) || n.degree >= 4 ? (
                     <text
                       x={n.x}
-                      y={n.y + r + 10 / view.k}
+                      y={n.y + r + 11 / view.k}
                       textAnchor="middle"
-                      className="fill-ink"
-                      style={{ fontSize: 10 / view.k, fontWeight: 500, paintOrder: "stroke" }}
+                      fill="var(--color-ink, #fafafa)"
+                      fillOpacity={dim ? 0.3 : isHover ? 1 : 0.68}
+                      style={{ fontSize: 11 / view.k, paintOrder: "stroke" }}
                       stroke="var(--color-canvas, #09090b)"
                       strokeWidth={3 / view.k}
+                      strokeLinejoin="round"
                     >
-                      {n.name.length > 22 ? `${n.name.slice(0, 21)}…` : n.name}
+                      {n.name.length > 24 ? `${n.name.slice(0, 23)}…` : n.name}
                     </text>
                   ) : null}
                 </g>
