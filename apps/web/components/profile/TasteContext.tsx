@@ -10,7 +10,7 @@ interface TasteTag {
   name: string;
   affinity?: number;
 }
-interface TasteNode {
+export interface TasteNode {
   id: string;
   name: string;
   /** Short type name, which is also the cluster the node sits in. */
@@ -20,7 +20,7 @@ interface TasteNode {
   /** How well the rest of the profile predicts this entry, 0..1. */
   affinity?: number;
 }
-interface TasteEdge {
+export interface TasteEdge {
   from: string;
   to: string;
   affinity: number;
@@ -38,58 +38,157 @@ const NODE_R = 15;
 const MIN_ZOOM = 0.4;
 const MAX_ZOOM = 6;
 
-/** Cluster rings scale with how many nodes they hold, so big clusters do not overlap. */
-function clusterRadius(count: number): number {
-  return count <= 1 ? 0 : Math.max(34, 13 * Math.sqrt(count) + count * 1.6);
-}
-
 interface Placed extends TasteNode {
   x: number;
   y: number;
+  /** How many edges touch this node; drives its size, as in Obsidian. */
+  degree: number;
 }
 
-/**
- * Clusters by entity type, laid out deterministically: one ring of clusters,
- * each a ring of its own nodes.
- *
- * Not force-directed on purpose. A simulation reshuffles on every load, so the
- * same taste never looks the same twice and nothing is learnable; a fixed
- * layout means a node stays where the reader last saw it.
- */
-function layout(nodes: TasteNode[]): { placed: Placed[]; clusters: { type: string; x: number; y: number; r: number }[] } {
-  const byType = new Map<string, TasteNode[]>();
-  for (const n of nodes) byType.set(n.type, [...(byType.get(n.type) ?? []), n]);
-  const types = [...byType.keys()].sort();
-  const c = SIZE / 2;
-  // One cluster sits in the middle; more spread around a ring wide enough for
-  // the largest of them.
-  const spread = types.length === 1 ? 0 : Math.max(...types.map((t) => clusterRadius(byType.get(t)!.length))) + 92;
+const ITERATIONS = 420;
+/** Golden angle: a spiral seed spreads the first positions evenly without randomness. */
+const GOLDEN = 2.399963229728653;
 
-  const placed: Placed[] = [];
-  const clusters: { type: string; x: number; y: number; r: number }[] = [];
-  types.forEach((type, i) => {
-    const angle = (i / types.length) * Math.PI * 2 - Math.PI / 2;
-    const cx = c + Math.cos(angle) * spread;
-    const cy = c + Math.sin(angle) * spread;
-    const members = byType.get(type)!;
-    const r = clusterRadius(members.length);
-    clusters.push({ type, x: cx, y: cy, r: r + NODE_R + 10 });
-    members.forEach((n, j) => {
-      if (members.length === 1) {
-        placed.push({ ...n, x: cx, y: cy });
-        return;
+/**
+ * Force-directed layout, run to completion before the first paint.
+ *
+ * Three forces, which is what gives the organic look: every pair of nodes
+ * repels, each edge pulls like a spring whose rest length shortens as affinity
+ * rises, and same-type nodes attract weakly so groups emerge instead of being
+ * drawn as rings. A ring layout made every relationship look identical — the
+ * geometry said nothing — whereas here distance carries the affinity.
+ *
+ * Deterministic despite being a simulation: positions are seeded on a golden
+ * spiral rather than at random and the tick count is fixed, so the same taste
+ * settles into the same picture every time. Nothing animates into place, so
+ * there is no reshuffling under the reader.
+ */
+export function layout(nodes: TasteNode[], edges: TasteEdge[]): Placed[] {
+  const n = nodes.length;
+  const c = SIZE / 2;
+  if (n === 1) return [{ ...nodes[0]!, x: c, y: c, degree: 0 }];
+
+  const index = new Map(nodes.map((node, i) => [node.id, i]));
+  const x = new Float64Array(n);
+  const y = new Float64Array(n);
+  const vx = new Float64Array(n);
+  const vy = new Float64Array(n);
+  const degree = new Int32Array(n);
+
+  for (let i = 0; i < n; i++) {
+    const a = i * GOLDEN;
+    const r = 26 * Math.sqrt(i + 1);
+    x[i] = c + Math.cos(a) * r;
+    y[i] = c + Math.sin(a) * r;
+  }
+
+  const links: { a: number; b: number; rest: number; k: number }[] = [];
+  for (const e of edges) {
+    const a = index.get(e.from);
+    const b = index.get(e.to);
+    if (a === undefined || b === undefined || a === b) continue;
+    degree[a]!++;
+    degree[b]!++;
+    // Strong affinity sits closer. Clamped so a weak link still has a length.
+    const w = Math.max(0, Math.min(1, e.affinity));
+    links.push({ a, b, rest: 150 - w * 95, k: 0.035 + w * 0.05 });
+  }
+
+  // Same-type pairs, so groups gather without being positioned by hand.
+  const kin: [number, number][] = [];
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 1; j < n; j++) {
+      if (nodes[i]!.type === nodes[j]!.type) kin.push([i, j]);
+    }
+  }
+
+  const repulsion = 2600;
+  for (let step = 0; step < ITERATIONS; step++) {
+    // Cooling: big moves early, fine settling late.
+    const alpha = Math.max(0.02, 1 - step / ITERATIONS) ** 1.6;
+
+    for (let i = 0; i < n; i++) {
+      for (let j = i + 1; j < n; j++) {
+        let dx = x[i]! - x[j]!;
+        let dy = y[i]! - y[j]!;
+        let d2 = dx * dx + dy * dy;
+        if (d2 < 1) {
+          // Coincident nodes get a deterministic nudge, never a random one.
+          dx = (i % 2 === 0 ? 1 : -1) * 0.5;
+          dy = (j % 2 === 0 ? 1 : -1) * 0.5;
+          d2 = dx * dx + dy * dy;
+        }
+        const d = Math.sqrt(d2);
+        const f = (repulsion / d2) * alpha;
+        const ux = (dx / d) * f;
+        const uy = (dy / d) * f;
+        vx[i]! += ux;
+        vy[i]! += uy;
+        vx[j]! -= ux;
+        vy[j]! -= uy;
       }
-      // Two rings once a cluster outgrows one, so nodes keep their spacing.
-      const perRing = Math.ceil(members.length / (members.length > 8 ? 2 : 1));
-      const ring = Math.floor(j / perRing);
-      const idxInRing = j % perRing;
-      const countInRing = Math.min(perRing, members.length - ring * perRing);
-      const a = (idxInRing / countInRing) * Math.PI * 2 - Math.PI / 2;
-      const rr = r * (ring === 0 ? 1 : 0.52);
-      placed.push({ ...n, x: cx + Math.cos(a) * rr, y: cy + Math.sin(a) * rr });
-    });
-  });
-  return { placed, clusters };
+    }
+
+    for (const { a, b, rest, k } of links) {
+      const dx = x[b]! - x[a]!;
+      const dy = y[b]! - y[a]!;
+      const d = Math.hypot(dx, dy) || 1;
+      const f = (d - rest) * k * alpha;
+      const ux = (dx / d) * f;
+      const uy = (dy / d) * f;
+      vx[a]! += ux;
+      vy[a]! += uy;
+      vx[b]! -= ux;
+      vy[b]! -= uy;
+    }
+
+    for (const [a, b] of kin) {
+      const dx = x[b]! - x[a]!;
+      const dy = y[b]! - y[a]!;
+      const d = Math.hypot(dx, dy) || 1;
+      const f = (d - 90) * 0.012 * alpha;
+      const ux = (dx / d) * f;
+      const uy = (dy / d) * f;
+      vx[a]! += ux;
+      vy[a]! += uy;
+      vx[b]! -= ux;
+      vy[b]! -= uy;
+    }
+
+    for (let i = 0; i < n; i++) {
+      // Gentle pull to centre keeps disconnected nodes from drifting off.
+      vx[i]! += (c - x[i]!) * 0.012 * alpha;
+      vy[i]! += (c - y[i]!) * 0.012 * alpha;
+      vx[i]! *= 0.82;
+      vy[i]! *= 0.82;
+      x[i]! += vx[i]!;
+      y[i]! += vy[i]!;
+    }
+  }
+
+  // Fit the settled graph to the viewBox, so a sparse one is not a dot in the
+  // middle and a dense one is not clipped.
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+  for (let i = 0; i < n; i++) {
+    minX = Math.min(minX, x[i]!);
+    maxX = Math.max(maxX, x[i]!);
+    minY = Math.min(minY, y[i]!);
+    maxY = Math.max(maxY, y[i]!);
+  }
+  const pad = 70;
+  const scale = Math.min((SIZE - pad * 2) / Math.max(1, maxX - minX), (SIZE - pad * 2) / Math.max(1, maxY - minY), 1.6);
+  const offX = c - ((minX + maxX) / 2) * scale;
+  const offY = c - ((minY + maxY) / 2) * scale;
+
+  return nodes.map((node, i) => ({
+    ...node,
+    x: x[i]! * scale + offX,
+    y: y[i]! * scale + offY,
+    degree: degree[i]!,
+  }));
 }
 
 function GraphView({ nodes, edges }: { nodes: TasteNode[]; edges: TasteEdge[] }) {
@@ -98,7 +197,8 @@ function GraphView({ nodes, edges }: { nodes: TasteNode[]; edges: TasteEdge[] })
   const drag = useRef<{ x: number; y: number; vx: number; vy: number } | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
 
-  const { placed, clusters } = useMemo(() => layout(nodes), [nodes]);
+  const placed = useMemo(() => layout(nodes, edges), [nodes, edges]);
+  const groups = useMemo(() => [...new Set(nodes.map((n) => n.type))].sort(), [nodes]);
   const at = useMemo(() => new Map(placed.map((n) => [n.id, n])), [placed]);
   const strongest = edges.length > 0 ? Math.max(...edges.map((e) => e.affinity)) : 1;
 
@@ -139,7 +239,7 @@ function GraphView({ nodes, edges }: { nodes: TasteNode[]; edges: TasteEdge[] })
           // render is both a lint error and a frame behind the pointer.
           className="h-auto w-full cursor-grab touch-none select-none active:cursor-grabbing"
           role="img"
-          aria-label={`Your taste as a graph: ${nodes.length} things in ${clusters.length} groups, linked by Qloo affinity`}
+          aria-label={`Your taste as a graph: ${nodes.length} things in ${groups.length} groups, linked by Qloo affinity`}
           onWheel={(e) => {
             const p = localPoint(e);
             zoomBy(e.deltaY < 0 ? 1.12 : 1 / 1.12, p.x, p.y);
@@ -160,23 +260,6 @@ function GraphView({ nodes, edges }: { nodes: TasteNode[]; edges: TasteEdge[] })
           }}
         >
           <g transform={`translate(${view.x} ${view.y}) scale(${view.k})`}>
-            {/* Cluster hulls first, so they read as background. */}
-            {clusters.map((c) => (
-              <g key={c.type}>
-                <circle cx={c.x} cy={c.y} r={c.r} fill="var(--color-surface, #18181b)" fillOpacity={0.5} />
-                <circle cx={c.x} cy={c.y} r={c.r} fill="none" stroke="var(--color-line, #27272a)" strokeDasharray="3 4" />
-                <text
-                  x={c.x}
-                  y={c.y - c.r - 6}
-                  textAnchor="middle"
-                  className="fill-muted"
-                  style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 0.6 }}
-                >
-                  {c.type}
-                </text>
-              </g>
-            ))}
-
             {edges.map((e) => {
               const a = at.get(e.from);
               const b = at.get(e.to);
@@ -200,8 +283,9 @@ function GraphView({ nodes, edges }: { nodes: TasteNode[]; edges: TasteEdge[] })
 
             {placed.map((n) => {
               const dim = linked !== null && !linked.has(n.id);
-              // Scale the node by how well the rest of the profile predicts it.
-              const r = NODE_R * (0.8 + (n.affinity ?? 0.5) * 0.45);
+              // Size by number of links, as Obsidian does, nudged by how well
+              // the rest of the profile predicts it.
+              const r = NODE_R * (0.72 + Math.min(1, n.degree / 6) * 0.5 + (n.affinity ?? 0.5) * 0.22);
               return (
                 <g
                   key={n.id}
@@ -271,8 +355,8 @@ function GraphView({ nodes, edges }: { nodes: TasteNode[]; edges: TasteEdge[] })
         </div>
       </div>
       <figcaption className="text-center text-xs text-muted">
-        {nodes.length} things in {clusters.length} {clusters.length === 1 ? "group" : "groups"}. Drag to pan, scroll to
-        zoom. Bigger nodes fit the rest of your taste more closely; thicker lines are stronger Qloo affinity.
+        {nodes.length} things, {edges.length} {edges.length === 1 ? "link" : "links"}. Drag to pan, scroll to zoom.
+        Things Qloo sees as related sit closer together; bigger nodes have more links.
       </figcaption>
     </figure>
   );
