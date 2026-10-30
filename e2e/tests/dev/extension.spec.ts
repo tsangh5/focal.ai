@@ -33,6 +33,50 @@ test.beforeEach(async () => {
 
 const strip = (page: Page) => page.locator('[data-focal="strip"]');
 
+test.describe("opt-in per site", () => {
+  test("a site that is off offers to be enabled, reads nothing until accepted, then ranks", async ({ ext, extPage }) => {
+    await signIn(extPage);
+    // Undo the fixture's allowlist: this is the first-run state.
+    await setSettings(extPage, { siteOn: [], skipSites: [], siteOff: [], incognito: false });
+    const identify = logCount("POST /api/page/identify");
+
+    const page = await ext.newPage();
+    await page.goto(SEARCH);
+    const offer = page.locator('[data-focal="offer"]');
+    await expect(offer).toBeVisible();
+    await expect(page.locator('[data-focal="offer-text"]')).toHaveText("Sort this list by your taste? focal is off for yelp.com.");
+
+    // Detection is a local DOM scan, so the offer costs the page nothing.
+    expect(await visualOrder(page, ".biz")).toEqual(ORIGINAL);
+    await page.waitForTimeout(2000);
+    expect(logCount("POST /api/page/identify")).toBe(identify);
+
+    await offer.getByRole("button", { name: "Enable for yelp.com" }).click();
+    await expect(strip(page)).toBeVisible();
+    await expect(offer).toHaveCount(0);
+    expect(await visualOrder(page, ".biz")).toEqual(["Rintaro", ...ORIGINAL.filter((n) => n !== "Rintaro")]);
+    // Accepting is remembered, and mirrored to the account.
+    await expect.poll(async () => ((await storage(extPage)).settings as { siteOn: string[] }).siteOn).toEqual(["yelp.com"]);
+  });
+
+  test("declining with Not now keeps the page as it was and is not asked again", async ({ ext, extPage }) => {
+    await signIn(extPage);
+    await setSettings(extPage, { siteOn: [], skipSites: [], siteOff: [], incognito: false });
+
+    const page = await ext.newPage();
+    await page.goto(SEARCH);
+    const offer = page.locator('[data-focal="offer"]');
+    await expect(offer).toBeVisible();
+    await offer.getByRole("button", { name: "Not now" }).click();
+    await expect(page.locator("[data-focal]")).toHaveCount(0);
+    expect(await visualOrder(page, ".biz")).toEqual(ORIGINAL);
+
+    await page.reload();
+    await page.waitForTimeout(2000);
+    await expect(page.locator("[data-focal]")).toHaveCount(0);
+  });
+});
+
 test.describe("reorder, labels, strip, undo", () => {
   test("flex list: lifts the clear match with CSS order, labels it, and Undo restores", async ({ ext, extPage }) => {
     await signIn(extPage);
@@ -45,12 +89,11 @@ test.describe("reorder, labels, strip, undo", () => {
     expect(await domOrder(page, ".biz")).toEqual(ORIGINAL);
     const got = await labels(page, ".biz");
     expect(Object.keys(got)).toEqual(["Rintaro"]);
-    expect(got.Rintaro).toMatchObject({ badge: "top-pick" });
-    const reason = await page.$eval('.biz[data-name="Rintaro"] [data-focal="label"]', (h) => {
-      const span = h.shadowRoot!.querySelector("span")!;
-      return `${span.textContent} ${span.title}`;
-    });
-    expect(reason).toContain("because you like Fugazi");
+    // The demo profile likes Rintaro outright, so the label is the favourite
+    // badge saying so directly rather than a grounded "because you like X".
+    // `labels()` already reads the span inside the label's shadow root; the
+    // tooltip only carries the reason on compact tiles, not a flex list.
+    expect(got.Rintaro).toMatchObject({ badge: "favourite", text: "You like this" });
 
     await page.locator('[data-focal="undo"]').click();
     await expect(page.locator("[data-focal]")).toHaveCount(0);
@@ -145,7 +188,8 @@ test.describe("where it must not run", () => {
 
   test("a site on the skip list", async ({ ext, extPage }) => {
     await signIn(extPage);
-    await setSettings(extPage, { skipSites: ["yelp.com"], siteOff: [], incognito: false });
+    // Enabled *and* skipped: policy has to beat the per-site preference.
+    await setSettings(extPage, { siteOn: ["yelp.com"], skipSites: ["yelp.com"], siteOff: [], incognito: false });
     await untouched(ext, SEARCH);
   });
 
@@ -211,10 +255,10 @@ test.describe("website hand-off and popup", () => {
     expect(await call({ type: "focal:ping" })).toEqual({ ok: true, version: "0.1.0" });
     expect(await call({ type: "focal:session", token: DEV_TOKEN, email: "dev@localhost" })).toEqual({ ok: true });
     expect((await storage(extPage)).session).toMatchObject({ token: DEV_TOKEN });
-    await setSettings(extPage, { skipSites: [], siteOff: [], incognito: true });
-    expect(await call({ type: "focal:settings", settings: { skipSites: ["https://www.Example.com/x"], siteOff: [] } })).toEqual({ ok: true });
+    await setSettings(extPage, { siteOn: [], skipSites: [], siteOff: [], incognito: true });
+    expect(await call({ type: "focal:settings", settings: { siteOn: [], skipSites: ["https://www.Example.com/x"], siteOff: [] } })).toEqual({ ok: true });
     // The website doesn't manage incognito; the browser's choice is kept.
-    expect((await storage(extPage)).settings).toEqual({ skipSites: ["example.com"], siteOff: [], incognito: true });
+    expect((await storage(extPage)).settings).toEqual({ siteOn: [], skipSites: ["example.com"], siteOff: [], incognito: true });
     expect(await call({ type: "focal:nope" })).toEqual({ ok: false, error: "bad_message" });
     expect(await call({ type: "focal:signout" })).toEqual({ ok: true });
     expect((await storage(extPage)).session).toBeUndefined();

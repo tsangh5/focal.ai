@@ -60,15 +60,18 @@ test.describe("page API used by the extension", () => {
     expect((await identify(request, "example.org")).items).toEqual([]);
   });
 
-  test("rank lifts the clear match with a grounded reason and keeps the result for its owner", async ({ request }) => {
+  test("rank lifts the card the viewer already likes, and keeps the result for its owner", async ({ request }) => {
     const { pageType, items } = await identify(request);
     const res = await request.post("/api/page/rank", { headers: AUTH, data: { host: "yelp.com", pathPattern: "/search", pageType, items } });
     const body = await res.json();
     expect(body.status).toBe("ranked");
     const ops = body.plan.ops as { op: string; clientId?: string; order?: string[]; text?: string; badge?: string }[];
     expect(ops.find((o) => o.op === "reorder")!.order![0]).toBe("c1");
+    // c1 is Rintaro, which the demo profile likes outright, so it earns the
+    // "favourite" badge and says so directly — a grounded "because you like
+    // Rintaro" would be circular (see core/labels.ts).
     expect(ops.filter((o) => o.op === "annotate")).toEqual([
-      expect.objectContaining({ clientId: "c1", badge: "top-pick", text: "Top pick for you · because you like Fugazi" }),
+      expect.objectContaining({ clientId: "c1", badge: "favourite", text: "You like this" }),
     ]);
     const row = await (await request.get(`/api/page/result/${body.pageResultId}`, { headers: AUTH })).json();
     expect(row).toMatchObject({ userId: devId, hostname: "yelp.com", status: "ranked" });
@@ -89,7 +92,7 @@ test.describe("profile, activity and settings APIs", () => {
 
   test("settings are shared by the website and the extension", async ({ request }) => {
     const saved = await (await request.put("/api/settings", { data: { skipSites: ["https://www.Reddit.com/r/x"] } })).json();
-    expect(saved).toEqual({ skipSites: ["reddit.com"], siteOff: [] });
+    expect(saved).toEqual({ siteOn: [], skipSites: ["reddit.com"], siteOff: [] });
     expect(await (await request.get("/api/settings", { headers: AUTH })).json()).toEqual(saved);
   });
 });

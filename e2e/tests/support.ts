@@ -56,10 +56,28 @@ export const test = base.extend<Fixtures>({
 
 export const expect = baseExpect;
 
+/**
+ * Fixture hosts focal is turned on for. Ranking is opt-in per site, so without
+ * these in `siteOn` the content script only ever offers "Enable for …" and
+ * never reads a list — the account's copy is no help, because the background
+ * worker pulls /api/settings on identify, which opt-in has already prevented.
+ * `mail.google.com` is deliberately absent: it is the never-run case.
+ */
+export const ENABLED_SITES = ["yelp.com", "example.org", "letterboxd.com"];
+
+/**
+ * Signs the extension in as an account that already uses focal, so the
+ * fixture sites are enabled. Tests that need a different per-site state call
+ * `setSettings` afterwards, which replaces this wholesale.
+ */
 export async function signIn(extPage: Page, token = DEV_TOKEN, email = "dev@localhost"): Promise<void> {
   await extPage.evaluate(
-    ([t, e]) => chrome.storage.local.set({ session: { token: t, email: e, savedAt: new Date().toISOString() } }),
-    [token, email],
+    ([t, e, sites]) =>
+      chrome.storage.local.set({
+        session: { token: t as string, email: e as string, savedAt: new Date().toISOString() },
+        settings: { siteOn: sites as string[], skipSites: [], siteOff: [], incognito: false },
+      }),
+    [token, email, ENABLED_SITES] as const,
   );
 }
 
