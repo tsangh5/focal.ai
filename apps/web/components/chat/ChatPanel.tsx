@@ -98,7 +98,8 @@ export function ChatPanel({ email }: { email: string }) {
   return (
     <section className="flex min-h-[70vh] flex-col gap-4" aria-label={`Chat with ${AGENT_NAME}`}>
       <div className="flex items-start gap-3">
-        <IrisAvatar size={44} className="-mt-1 shrink-0" state={busy ? "thinking" : "idle"} />
+        {/* Sizes are whole multiples of the 24px sprite grid. */}
+        <IrisAvatar size={48} className="-mt-1 shrink-0" state={busy ? "thinking" : "idle"} />
         <div className="flex flex-col gap-1">
           <h1 className="text-2xl font-semibold tracking-tight text-ink">Tell {AGENT_NAME} what you like</h1>
           <p className="text-sm text-muted">
@@ -136,7 +137,7 @@ export function ChatPanel({ email }: { email: string }) {
                 {m.role === "assistant" ? (
                   // Pleased when the turn actually saved something.
                   <IrisAvatar
-                    size={26}
+                    size={24}
                     className="mb-0.5 shrink-0"
                     state={m.events && m.events.length > 0 ? "happy" : "idle"}
                     decorative
@@ -168,7 +169,7 @@ export function ChatPanel({ email }: { email: string }) {
 
         {busy ? (
           <div className="flex items-end gap-2 self-start" aria-label={`${AGENT_NAME} is typing`}>
-            <IrisAvatar size={26} className="mb-0.5 shrink-0" state="thinking" decorative />
+            <IrisAvatar size={24} className="mb-0.5 shrink-0" state="thinking" decorative />
             <div className="flex items-center gap-1 rounded-2xl bg-surface-2 px-3.5 py-3">
               {[0, 1, 2].map((d) => (
                 <span
