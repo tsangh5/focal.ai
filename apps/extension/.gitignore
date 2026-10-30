@@ -1,1 +1,4 @@
 *.zip
+# CRX signing key for the pinned manifest `key`. Only needed to self-host a
+# .crx with the same id; the public key in build.mjs is what pins the id.
+*.pem

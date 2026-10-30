@@ -3,7 +3,7 @@ import { pathPattern } from "./api";
 import { applyPlan, FOCAL_ATTR, focalTrusted, type ApplyHandle, type ApplyOptions, type ApplyTarget } from "./apply/apply";
 import { createFirstRunGate, createRerunGate, type RenderGate } from "./apply/gate";
 import { blockAnchor, decorate } from "./apply/ui";
-import { FOCAL_HOSTS } from "./config";
+import { FOCAL_HOSTS, isTrustedOrigin } from "./config";
 import { cityHints, detectList, extractSnippets, snapshotCards, type DetectedList } from "./detect/detect";
 import { checkEligibility } from "./guards/eligibility";
 import { applyLayout } from "./layouts/apply";
@@ -547,6 +547,26 @@ setInterval(() => {
   rejected = new WeakMap();
   scheduleRerun();
 }, 1000);
+
+/**
+ * Publish the extension id on focal's own site, so `/connect` can message us
+ * without being configured with it.
+ *
+ * `externally_connectable` requires the *page* to name the extension it wants
+ * to talk to, which made the handoff depend on a build-time constant on the
+ * website matching the id Chrome assigned the extension. For an unpacked build
+ * that id comes from the install path, so it differs per machine; for a store
+ * build it is fixed but still has to be copied into the deployment by hand. A
+ * mismatch is indistinguishable from "no extension installed" from the page's
+ * side, which is the wrong thing to tell someone.
+ *
+ * Announcing it inverts the dependency: the extension knows its own id, and
+ * the page learns it from the DOM. Only on origins already trusted for the
+ * handoff — `isTrustedOrigin` is exact-match — so no other site can read it.
+ */
+if (typeof chrome !== "undefined" && chrome.runtime?.id && isTrustedOrigin(location.origin)) {
+  document.documentElement.dataset.focalExtensionId = chrome.runtime.id;
+}
 
 // Signing in resumes a tab that stood down while signed out.
 if (typeof chrome !== "undefined" && chrome.storage?.onChanged) {

@@ -13,14 +13,37 @@ function runtime(): ChromeRuntime | undefined {
 
 type State = { kind: "idle" } | { kind: "working" } | { kind: "done"; email: string } | { kind: "error"; message: string };
 
+/**
+ * The id the extension published on this page (content.ts), preferred over the
+ * build-time constant: it is what Chrome actually assigned, so it cannot drift
+ * from the deployment's configuration the way a hardcoded value can.
+ */
+export function announcedId(): string {
+  const el = globalThis.document?.documentElement;
+  return el?.dataset?.focalExtensionId ?? "";
+}
+
 /** Issues an extension session and hands it over through externally_connectable. */
 export function ConnectExtension({ extensionId }: { extensionId: string }) {
   const [state, setState] = useState<State>({ kind: "idle" });
 
   async function connect() {
     const rt = runtime();
-    if (!extensionId || !rt?.sendMessage) {
-      setState({ kind: "error", message: "Install the focal extension in a Chromium browser, then reload this page." });
+    const id = announcedId() || extensionId;
+    // Three distinct failures that used to share one message. Telling someone
+    // to install an extension they already have cost real debugging time.
+    if (!rt?.sendMessage) {
+      setState({
+        kind: "error",
+        message: "No extension detected on this page. Install focal in a Chromium browser and reload. If it is installed, it was built for a different site — rebuild it with this site as FOCAL_ORIGIN.",
+      });
+      return;
+    }
+    if (!id) {
+      setState({
+        kind: "error",
+        message: "The extension is installed but did not announce itself. Reload this page; if that does not help, update the extension — older builds need NEXT_PUBLIC_FOCAL_EXTENSION_ID set on this site.",
+      });
       return;
     }
     setState({ kind: "working" });
@@ -30,7 +53,7 @@ export function ConnectExtension({ extensionId }: { extensionId: string }) {
       return;
     }
     const { token, email } = (await res.json()) as { token: string; email: string };
-    rt.sendMessage(extensionId, { type: "focal:session", token, email }, (reply) => {
+    rt.sendMessage(id, { type: "focal:session", token, email }, (reply) => {
       const ok = (reply as { ok?: boolean } | undefined)?.ok === true;
       setState(ok ? { kind: "done", email } : { kind: "error", message: rt.lastError?.message ?? "The extension did not answer." });
     });
