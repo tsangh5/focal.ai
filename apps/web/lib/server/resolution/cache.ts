@@ -19,6 +19,9 @@ import {
 } from "@focal-ai/core";
 import { getDb } from "../db";
 
+/** Qloo searches in flight at once for one rank's cache misses. */
+export const RESOLVE_CONCURRENCY = 4;
+
 /** Unresolved entries go stale after 7 days; resolved/ambiguous are valid forever. */
 export const UNRESOLVED_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -70,8 +73,8 @@ function stillValid(row: CachedResolution): boolean {
 
 /**
  * Wraps core's resolveCandidates: one batched lookup up front, hits reuse the
- * cached entity + status, and each miss resolves (and writes back) one at a
- * time so a thrown search error is never cached. Cache read/write failures
+ * cached entity + status, and each miss resolves (and writes back) on its own,
+ * a few at a time, so a thrown search error is never cached. Cache read/write failures
  * fall back to plain resolution rather than failing the rank.
  */
 export function cachedResolutionResolver(
@@ -111,17 +114,17 @@ export function cachedResolutionResolver(
       };
     });
 
-    for (const index of misses) {
-      // Per-caller uncached budget: a 60-item rank fans out to paced Qloo
-      // searches — cap them so one caller can't starve the queue (R8-8).
+    const resolveMiss = async (index: number): Promise<void> => {
+      // Per-caller uncached budget: a 60-item rank fans out to Qloo searches —
+      // cap them so one caller can't starve the queue (R8-8).
       if (!checkRateLimit(`resolve:${callerKey}`, { limit: 90, windowMs: 60_000 }).ok) {
         onLimited?.(); // per-request signal (R9-7) — never module state
         resolved[index] = { ...candidates[index]!, status: "unresolved" as ResolutionStatus };
-        continue;
+        return;
       }
       const [outcome] = await resolveCandidates([candidates[index]!], search, expectedType, defaults);
       resolved[index] = outcome;
-      if (!store) continue;
+      if (!store) return;
       try {
         await store.put([
           {
@@ -134,7 +137,15 @@ export function cachedResolutionResolver(
       } catch {
         // A cache write failure must not fail the rank.
       }
-    }
+    };
+
+    // A few searches at a time: one by one, a new 48-item list took over 20 s
+    // to resolve, longer than the extension waits for a rank.
+    let next = 0;
+    const worker = async () => {
+      while (next < misses.length) await resolveMiss(misses[next++]!);
+    };
+    await Promise.all(Array.from({ length: Math.min(RESOLVE_CONCURRENCY, misses.length) }, worker));
 
     return resolved.map((r) => r!);
   }

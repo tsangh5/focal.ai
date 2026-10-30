@@ -3,6 +3,7 @@ import { runPageRank, type CoreEntity, type CoreSearchFn, type PageCandidate, ty
 import { QlooError } from "@focal-ai/qloo";
 import {
   cachedResolutionResolver,
+  RESOLVE_CONCURRENCY,
   UNRESOLVED_TTL_MS,
   type CachedResolution,
   type ResolutionKey,
@@ -107,6 +108,21 @@ describe("cachedResolutionResolver", () => {
     expect(resolved[0]).toMatchObject({ status: "unresolved" });
     expect(resolved[0]!.entity).toBeUndefined();
     expect(search).not.toHaveBeenCalled();
+  });
+
+  it("resolves misses a few at a time and keeps each outcome on its own item", async () => {
+    let inFlight = 0;
+    let peak = 0;
+    const search = vi.fn<CoreSearchFn>(async ({ query }) => {
+      peak = Math.max(peak, ++inFlight);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      inFlight--;
+      return [{ ...RINTARO, entityId: `E-${query}`, name: query }];
+    });
+    const many = Array.from({ length: 10 }, (_, i) => ({ ...candidate, clientId: `c${i}`, name: `Place ${i}`, originalIndex: i }));
+    const resolved = await cachedResolutionResolver(fakeStore(), "concurrency-user")(many, search, PLACE);
+    expect(peak).toBe(RESOLVE_CONCURRENCY);
+    expect(resolved.map((r) => r.entity?.entityId)).toEqual(many.map((c) => `E-${c.name}`));
   });
 
   it("never caches a thrown search error", async () => {

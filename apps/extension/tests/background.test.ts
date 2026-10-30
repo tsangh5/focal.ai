@@ -65,12 +65,62 @@ describe("server calls", () => {
     const clock = new AbortController();
     const timeout = vi.spyOn(AbortSignal, "timeout").mockReturnValue(clock.signal);
     const { fetch, send } = await startWorker(() => new Promise<Answer>(() => {}));
-    const reply = send(RANK);
+    const reply = send({ type: "feedback", body: { pageResultId: "p", clientId: "c0", verdict: "more" } });
     await vi.waitFor(() => expect(fetch).toHaveBeenCalledOnce());
     expect(timeout).toHaveBeenCalledWith(15_000);
     expect(fetch.mock.calls[0]![1]!.signal).toBe(clock.signal);
     clock.abort(new DOMException("signal timed out", "TimeoutError"));
     await expect(reply).resolves.toEqual({ ok: false, error: "signal timed out" });
+  });
+
+  it("give a rank 45 s, since a new list's first rank resolves every name", async () => {
+    const timeout = vi.spyOn(AbortSignal, "timeout");
+    const { send } = await startWorker(() => ({ status: 200, body: { plan: null } }));
+    await send(RANK);
+    expect(timeout).toHaveBeenCalledWith(45_000);
+  });
+});
+
+describe("site decisions", () => {
+  const ON = (siteOn: string[]): Answer => ({ status: 200, body: { siteOn, skipSites: [], siteOff: [] } });
+
+  it("survive signing in when they were made signed out, and reach the account", async () => {
+    const puts: unknown[] = [];
+    const { local, fetch, send } = await startWorker((route) => (route === "GET /api/settings" ? ON(["yelp.com"]) : route === "PUT /api/settings" ? { status: 200 } : NOT_A_LIST));
+    const session = local.session;
+    delete local.session;
+    await send({ type: "enable-site", host: "guide.michelin.com", on: true });
+    expect(local.pendingSites).toEqual({ "guide.michelin.com": true });
+
+    local.session = session;
+    await send(IDENTIFY);
+    await vi.waitFor(() => expect(local.pendingSites).toBeUndefined());
+    for (const [, init] of fetch.mock.calls) if (init?.method === "PUT") puts.push(JSON.parse(init.body as string));
+    expect((local.settings as { siteOn: string[] }).siteOn).toEqual(["yelp.com", "guide.michelin.com"]);
+    expect(puts[0]).toEqual({ siteOn: ["yelp.com", "guide.michelin.com"], skipSites: [], siteOff: [] });
+  });
+
+  it("stop being pending once stored, and aren't undone by a pull that left before", async () => {
+    let answerPull: (answer: Answer) => void = () => {};
+    const { local, send } = await startWorker((route) =>
+      route === "GET /api/settings" ? new Promise<Answer>((resolve) => (answerPull = resolve)) : route === "PUT /api/settings" ? { status: 200 } : NOT_A_LIST,
+    );
+    await send(IDENTIFY);
+    await send({ type: "enable-site", host: "guide.michelin.com", on: true });
+    expect(local.pendingSites).toBeUndefined();
+    answerPull(ON([]));
+    await settle();
+    expect((local.settings as { siteOn: string[] }).siteOn).toEqual(["guide.michelin.com"]);
+  });
+
+  it("stay pending while the account can't be reached", async () => {
+    const { local, send } = await startWorker((route) => (route === "PUT /api/settings" ? { status: 503 } : route === "GET /api/settings" ? ON([]) : NOT_A_LIST));
+    await send({ type: "enable-site", host: "guide.michelin.com", on: true });
+    expect(local.pendingSites).toEqual({ "guide.michelin.com": true });
+    await send(IDENTIFY);
+    await settle();
+    expect((local.settings as { siteOn: string[] }).siteOn).toEqual(["guide.michelin.com"]);
+    expect(local.pendingSites).toEqual({ "guide.michelin.com": true });
   });
 });
 

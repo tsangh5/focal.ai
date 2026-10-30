@@ -17,6 +17,23 @@ export async function setSettings(settings: Settings): Promise<void> {
   await chrome.storage.local.set({ settings, neverRunVersion: NEVER_RUN_VERSION });
 }
 
+/**
+ * Site decisions made in this browser that the account hasn't stored yet
+ * (signed out, offline, or a push still in flight), by host. A settings pull
+ * replays them over the account's lists so it never undoes them.
+ */
+export type PendingSites = Record<string, boolean>;
+
+export async function getPendingSites(): Promise<PendingSites> {
+  const { pendingSites } = await chrome.storage.local.get("pendingSites");
+  return pendingSites && typeof pendingSites === "object" ? (pendingSites as PendingSites) : {};
+}
+
+export async function setPendingSites(pending: PendingSites): Promise<void> {
+  if (Object.keys(pending).length > 0) await chrome.storage.local.set({ pendingSites: pending });
+  else await chrome.storage.local.remove("pendingSites");
+}
+
 export async function getSession(): Promise<Session | null> {
   const { session } = await chrome.storage.local.get("session");
   return session && typeof (session as Session).token === "string" ? (session as Session) : null;
