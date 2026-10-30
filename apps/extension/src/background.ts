@@ -1,7 +1,7 @@
 import type { BackgroundReply, ContentMessage, ExternalMessage } from "./api";
 import { FOCAL_ORIGIN, isTrustedOrigin } from "./config";
 import { enableSite, parseSettings } from "./settings";
-import { getSession, getSettings, setSession, setSettings, setTabResult } from "./storage";
+import { getSession, getSettings, setSession, setSettings, setTabOutcome, setTabResult } from "./storage";
 
 /** A hung server must not pin a run (and its chip) forever. */
 const FETCH_TIMEOUT_MS = 15_000;
@@ -87,6 +87,9 @@ chrome.runtime.onMessage.addListener((msg: ContentMessage, sender, sendResponse)
         .catch(() => sendResponse({ ok: false, error: "save_failed" }));
       return true;
     }
+    case "page-outcome":
+      if (tabId !== undefined) void setTabOutcome(tabId, msg.outcome);
+      return false;
     case "sync-settings":
       void pushSettings().then(() => sendResponse({ ok: true }));
       return true;

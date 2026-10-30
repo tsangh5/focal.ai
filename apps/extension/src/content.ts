@@ -1,4 +1,4 @@
-import type { BackgroundReply, ContentMessage, FeedbackResponse, IdentifyResponse, RankResponse } from "./api";
+import type { BackgroundReply, ContentMessage, FeedbackResponse, IdentifyResponse, PageOutcome, RankResponse } from "./api";
 import { pathPattern } from "./api";
 import { applyPlan, FOCAL_ATTR, focalTrusted, type ApplyHandle, type ApplyOptions, type ApplyTarget } from "./apply/apply";
 import { createFirstRunGate, createRerunGate, type RenderGate } from "./apply/gate";
@@ -23,6 +23,11 @@ function notify(msg: ContentMessage): void {
   } catch {
     // The extension was reloaded or removed; there is no one to tell.
   }
+}
+
+/** Tell the popup why this page ended as it did. Best effort, like notify(). */
+function report(outcome: PageOutcome): void {
+  notify({ type: "page-outcome", outcome });
 }
 
 /** A plan on the page: its handle, the plan, and the cards (by id) it was applied to. */
@@ -389,6 +394,7 @@ async function runPass(): Promise<void> {
     if (!detected) {
       standDown();
       lastList = null;
+      if (isSiteEnabled(settings, location.hostname)) report("no-list");
       return watchPage();
     }
 
@@ -439,12 +445,14 @@ async function runPass(): Promise<void> {
     if (stale()) return gate?.cancel();
     if (!identified.ok) {
       gate?.cancel();
+      report(identified.error === "signed_out" ? "signed-out" : "error");
       // Signed out: stand down until a session appears; anything else may pass.
       return identified.error === "signed_out" ? reject(list) : scheduleRetry(list.container);
     }
     if (!identified.data.isList || !identified.data.pageType || identified.data.items.length === 0) {
       gate?.cancel();
       dropRetry(list.container);
+      report("not-a-list");
       if (!topUp) reject(list);
       return;
     }
@@ -458,11 +466,13 @@ async function runPass(): Promise<void> {
     if (stale()) return gate?.cancel();
     if (!ranked.ok) {
       gate?.cancel();
+      report(ranked.error === "signed_out" ? "signed-out" : "error");
       return ranked.error === "signed_out" ? reject(list) : scheduleRetry(list.container);
     }
     dropRetry(list.container); // identified and ranked: the failure episode is over
     if (!ranked.data.plan) {
       gate?.cancel();
+      report(ranked.data.status === "no_signals" ? "no-signals" : "nothing-to-lift");
       // Nothing to lift in the list as it is now: the old arrangement goes too.
       if (!topUp) standDown();
       return;
@@ -491,6 +501,7 @@ async function runPass(): Promise<void> {
       drainRecords();
       rebaseline();
       if (pageResultId && current) notify({ type: "page-result", pageResultId, lifted: current.handle.lifted });
+      report(current && current.handle.lifted > 0 ? "lifted" : "nothing-to-lift");
       return;
     }
 
@@ -506,6 +517,7 @@ async function runPass(): Promise<void> {
       drainRecords();
       queueMicrotask(() => rebaseline());
       if (pageResultId) notify({ type: "page-result", pageResultId, lifted: current.handle.lifted });
+      report(current.handle.lifted > 0 ? "lifted" : "nothing-to-lift");
     };
     const applied = current && { ...current, active: current.handle.active };
     own.ready(apply, planEffectOnScreen(list, plan, applied));

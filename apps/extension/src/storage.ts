@@ -1,3 +1,4 @@
+import type { PageOutcome } from "./api";
 import { DEFAULT_SETTINGS, parseSettings, type Settings } from "./settings";
 import { NEVER_RUN_VERSION } from "@focal-ai/core/neverRun";
 
@@ -27,8 +28,10 @@ export async function setSession(session: Session | null): Promise<void> {
 }
 
 export interface TabResult {
-  pageResultId: string;
+  pageResultId: string | null;
   lifted: number;
+  /** Why the page ended up as it did; drives the popup's explanation. */
+  outcome?: PageOutcome;
 }
 
 export async function getTabResult(tabId: number): Promise<TabResult | null> {
@@ -42,4 +45,16 @@ export async function setTabResult(tabId: number, result: { pageResultId: string
   const key = `result:${tabId}`;
   if (result.pageResultId === null) await chrome.storage.session.remove(key);
   else await chrome.storage.session.set({ [key]: result });
+}
+
+/**
+ * Records why a page ended as it did, keeping any ranking already stored for
+ * the tab so "Why this order?" keeps working alongside the explanation.
+ */
+export async function setTabOutcome(tabId: number, outcome: PageOutcome): Promise<void> {
+  const key = `result:${tabId}`;
+  const current = await getTabResult(tabId);
+  await chrome.storage.session.set({
+    [key]: { pageResultId: current?.pageResultId ?? null, lifted: current?.lifted ?? 0, outcome },
+  });
 }

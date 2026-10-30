@@ -2,7 +2,7 @@ import { FOCAL_HOSTS, FOCAL_ORIGIN } from "../config";
 import { checkEligibility } from "../guards/eligibility";
 import { isSiteEnabled, normalizeHost, toggleSite } from "../settings";
 import { getSession, getSettings, getTabResult, setSettings } from "../storage";
-import { REASON_TEXT } from "./reasons";
+import { OUTCOME_TEXT, REASON_TEXT } from "./reasons";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -45,11 +45,23 @@ async function main(): Promise<void> {
 
   const result = tab?.id !== undefined ? await getTabResult(tab.id) : null;
   const why = $<HTMLButtonElement>("why");
-  if (result) {
+  // "Why this order?" needs a stored ranking; an outcome alone has nothing to open.
+  if (result?.pageResultId) {
     why.disabled = false;
+    const id = result.pageResultId;
     why.addEventListener("click", () => {
-      void chrome.tabs.create({ url: `${FOCAL_ORIGIN}/why/${encodeURIComponent(result.pageResultId)}` });
+      void chrome.tabs.create({ url: `${FOCAL_ORIGIN}/why/${encodeURIComponent(id)}` });
     });
+  }
+
+  // On an enabled site that was left alone, say why. Silence here reads as a
+  // broken extension rather than a decision focal made on purpose.
+  if (toggle.checked && result?.outcome) {
+    const text =
+      result.outcome === "lifted"
+        ? `focal lifted ${result.lifted} ${result.lifted === 1 ? "match" : "matches"} on this page.`
+        : OUTCOME_TEXT[result.outcome];
+    if (text) $("site-status").textContent = text;
   }
 }
 

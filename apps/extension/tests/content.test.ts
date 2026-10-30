@@ -54,6 +54,9 @@ async function visit(): Promise<void> {
 }
 
 const storedLayout = (data: Record<string, unknown>) => (data.layouts as Record<string, unknown> | undefined)?.[KEY];
+/** Server calls only: page-result and page-outcome are popup notifications. */
+const calls = (sent: ContentMessage[]) => sent.map((m) => m.type).filter((t) => t === "identify" || t === "rank");
+
 const ranks = (sent: ContentMessage[]) => sent.flatMap((m): RankRequest[] => (m.type === "rank" ? [m.body] : []));
 
 beforeEach(() => {
@@ -68,12 +71,12 @@ describe("content script with learned layouts", () => {
   it("makes no identify call on a second run on the same layout, and ranks with names, type and city only", async () => {
     const { data, sent } = stubChrome({ resolvedCount: 4, resolutionLimited: false });
     await visit();
-    expect(sent.map((m) => m.type)).toEqual(["identify", "rank"]);
+    expect(calls(sent)).toEqual(["identify", "rank"]);
     expect(storedLayout(data)).toMatchObject(LAYOUT);
 
     sent.length = 0;
     await visit();
-    expect(sent.map((m) => m.type)).toEqual(["rank"]);
+    expect(calls(sent)).toEqual(["rank"]);
     expect(ranks(sent)[0]).toEqual({
       host: "yelp.com",
       pathPattern: "/search",
@@ -85,7 +88,7 @@ describe("content script with learned layouts", () => {
   it("deletes the stored layout when its rank resolves nothing", async () => {
     const { data, sent } = stubChrome({ status: "nothing_scored", resolvedCount: 0, resolutionLimited: false }, LAYOUT);
     await visit();
-    expect(sent.map((m) => m.type)).toEqual(["rank"]);
+    expect(calls(sent)).toEqual(["rank"]);
     expect(storedLayout(data)).toBeUndefined();
   });
 
@@ -97,7 +100,7 @@ describe("content script with learned layouts", () => {
   ])("keeps the stored layout when %s", async (_, rank) => {
     const { data, sent } = stubChrome(rank, LAYOUT);
     await visit();
-    expect(sent.map((m) => m.type)).toEqual(["rank"]);
+    expect(calls(sent)).toEqual(["rank"]);
     expect(storedLayout(data)).toMatchObject(LAYOUT);
   });
 

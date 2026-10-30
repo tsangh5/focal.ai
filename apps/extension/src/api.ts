@@ -80,12 +80,35 @@ export interface FeedbackResponse {
   strength?: string;
 }
 
+/**
+ * What happened on a page focal was allowed to act on. Only reported once the
+ * site is enabled and the guards passed — anything earlier is already explained
+ * by an eligibility reason.
+ */
+export type PageOutcome =
+  /** Reordered: some cards were lifted. */
+  | "lifted"
+  /** Ranked, but nothing stood out enough to move. */
+  | "nothing-to-lift"
+  /** No group of cards on the page looked like a list of things. */
+  | "no-list"
+  /** A list, but not of things Qloo knows — search results, articles, UI. */
+  | "not-a-list"
+  /** The profile has nothing that applies to this kind of thing. */
+  | "no-signals"
+  /** Identify or rank failed. */
+  | "error"
+  /** Signed out, so there is no profile to rank with. */
+  | "signed-out";
+
 export type ContentMessage =
   | { type: "identify"; body: IdentifyRequest }
   | { type: "rank"; body: RankRequest }
   | { type: "feedback"; body: FeedbackRequest }
   /** A null id clears the tab's result: its page or plan is gone. */
   | { type: "page-result"; pageResultId: string | null; lifted: number }
+  /** Why this page ended up as it did, so the popup can say so. */
+  | { type: "page-outcome"; outcome: PageOutcome }
   | { type: "open-why"; pageResultId: string }
   /** The on-page offer: turn focal on for this host, or decline it. */
   | { type: "enable-site"; host: string; on: boolean }

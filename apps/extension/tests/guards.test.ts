@@ -3,7 +3,9 @@ import { JSDOM } from "jsdom";
 import { checkEligibility } from "../src/guards/eligibility";
 import { hasSensitiveField } from "../src/guards/fields";
 import { matchNeverRun } from "@focal-ai/core/neverRun";
+import type { PageOutcome } from "../src/api";
 import { isTrustedOrigin } from "../src/config";
+import { OUTCOME_TEXT, REASON_TEXT } from "../src/popup/reasons";
 import {
   DEFAULT_SETTINGS,
   enableSite,
@@ -302,5 +304,31 @@ describe("per-site opt-in", () => {
     expect(checkEligibility({ settings: skipped, incognito: false, url: "https://www.yelp.com/search" }).eligible).toBe(
       false,
     );
+  });
+});
+
+describe("popup explanations", () => {
+  it("has text for every outcome focal can report", () => {
+    const outcomes: PageOutcome[] = [
+      "lifted",
+      "nothing-to-lift",
+      "no-list",
+      "not-a-list",
+      "no-signals",
+      "error",
+      "signed-out",
+    ];
+    for (const o of outcomes) expect(OUTCOME_TEXT).toHaveProperty(o);
+    // "lifted" is phrased in the popup with the count, so its table entry is blank.
+    expect(OUTCOME_TEXT.lifted).toBe("");
+    for (const o of outcomes.filter((x) => x !== "lifted")) {
+      expect(OUTCOME_TEXT[o].length, o).toBeGreaterThan(10);
+    }
+  });
+
+  it("has text for every reason focal declines to run", () => {
+    for (const kind of ["scheme", "never-run", "skipped", "site-off", "incognito", "sensitive-field"] as const) {
+      expect(REASON_TEXT[kind].length, kind).toBeGreaterThan(10);
+    }
   });
 });
