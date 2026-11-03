@@ -29,20 +29,27 @@ export function ConnectExtension({ extensionId }: { extensionId: string }) {
 
   async function connect() {
     const rt = runtime();
-    const id = announcedId() || extensionId;
-    // Three distinct failures that used to share one message. Telling someone
-    // to install an extension they already have cost real debugging time.
+    const announced = announcedId();
+    const id = announced || extensionId;
+
+    // Chromium exposes chrome.runtime.sendMessage to every page whether or not
+    // any extension is installed, so its presence says nothing about focal —
+    // only that this browser can talk to extensions at all.
     if (!rt?.sendMessage) {
       setState({
         kind: "error",
-        message: "No extension detected on this page. Install focal in a Chromium browser and reload. If it is installed, it was built for a different site — rebuild it with this site as FOCAL_ORIGIN.",
+        message: "This browser can't talk to extensions. focal needs Chrome, Edge, Brave, Arc or Opera.",
       });
       return;
     }
+    // An announcement is the only positive proof focal is here: the content
+    // script writes its id onto this page on load. Without one, and with no id
+    // configured for this site, there is nothing to talk to.
     if (!id) {
       setState({
         kind: "error",
-        message: "The extension is installed but did not announce itself. Reload this page; if that does not help, update the extension — older builds need NEXT_PUBLIC_FOCAL_EXTENSION_ID set on this site.",
+        message:
+          "No focal extension detected on this page. Install it and reload. If it is already installed, it was built for a different site — rebuild it with this site as FOCAL_ORIGIN.",
       });
       return;
     }
@@ -55,7 +62,16 @@ export function ConnectExtension({ extensionId }: { extensionId: string }) {
     const { token, email } = (await res.json()) as { token: string; email: string };
     rt.sendMessage(id, { type: "focal:session", token, email }, (reply) => {
       const ok = (reply as { ok?: boolean } | undefined)?.ok === true;
-      setState(ok ? { kind: "done", email } : { kind: "error", message: rt.lastError?.message ?? "The extension did not answer." });
+      if (ok) {
+        setState({ kind: "done", email });
+        return;
+      }
+      // No answer from a configured id usually means that build is not the one
+      // installed; an unanswered announced id means it died mid-handshake.
+      const fallback = announced
+        ? "The extension did not answer. Reload this page and try again."
+        : `No extension answered on id ${id}. The installed build may have a different id — reload this page so it can announce itself.`;
+      setState({ kind: "error", message: rt.lastError?.message ?? fallback });
     });
   }
 
