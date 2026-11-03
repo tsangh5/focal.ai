@@ -1,7 +1,7 @@
 import { FOCAL_HOSTS, FOCAL_ORIGIN } from "../config";
 import { checkEligibility } from "../guards/eligibility";
 import { isSiteEnabled, normalizeHost } from "../settings";
-import { getSession, getSettings, getTabResult } from "../storage";
+import { getOwnKeys, getSession, getSettings, getTabResult, setOwnKeys } from "../storage";
 import { OUTCOME_TEXT, REASON_TEXT } from "./reasons";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -42,6 +42,22 @@ async function main(): Promise<void> {
       if (tab?.id !== undefined) await chrome.tabs.reload(tab.id);
     });
   }
+
+  // Own-key panel. The key lives in this browser's extension storage and is
+  // attached to identify requests; focal never stores it.
+  const keyInput = $<HTMLInputElement>("own-key");
+  const keyStatus = $("own-key-status");
+  const saved = await getOwnKeys();
+  if (saved.jev) {
+    keyInput.value = saved.jev;
+    keyStatus.textContent = "Using your key. Ranking does not count against the free allowance.";
+    $("own-key-summary").textContent = "Your Jev key is in use";
+  }
+  $<HTMLButtonElement>("own-key-save").addEventListener("click", async () => {
+    const next = keyInput.value.trim();
+    await setOwnKeys(next ? { jev: next } : {});
+    keyStatus.textContent = next ? "Saved in this browser." : "Cleared. Back to the shared key.";
+  });
 
   const result = tab?.id !== undefined ? await getTabResult(tab.id) : null;
   const why = $<HTMLButtonElement>("why");

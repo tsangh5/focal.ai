@@ -103,7 +103,15 @@ export function __setDescriberForTests(d: ProductDescriber | undefined): void {
 let identifier: Identifier | undefined;
 
 /** Mock mode stays offline; otherwise Jev when keyed, the mock in dev, else unavailable. */
-export function getIdentifier(): Identifier {
+export function getIdentifier(callerKey?: string): Identifier {
+  // A caller-supplied key is never cached: it belongs to that request only.
+  if (callerKey) {
+    return createJevIdentifier({
+      apiKey: callerKey,
+      baseUrl: process.env.TYPESAFE_BASE_URL,
+      model: process.env.TYPESAFE_MODEL,
+    });
+  }
   if (identifier) return identifier;
   if (process.env.QLOO_MOCK === "1") return (identifier = createMockIdentifier());
   const apiKey = process.env.TYPESAFE_API_KEY?.trim();

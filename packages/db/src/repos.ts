@@ -1,6 +1,7 @@
 import { json, toIso, type Sql } from "./client";
 import {
   DbError,
+  type UsageKind,
   type ActivityRecord,
   type Layout,
   type PageResultRecord,
@@ -289,6 +290,34 @@ export function pageResultsRepo(sql: Sql) {
     async purgeExpired(): Promise<number> {
       const rows = await sql`DELETE FROM page_results WHERE expires_at <= now() RETURNING id`;
       return rows.length;
+    },
+  };
+}
+
+/**
+ * Free-tier counters. Only incremented when a request used the project's own
+ * key: a caller who brought their own is not metered, since it costs us
+ * nothing.
+ */
+export function usageRepo(sql: Sql) {
+  return {
+    async get(userId: string, kind: UsageKind): Promise<number> {
+      const [row] = await sql`SELECT used FROM usage_counters WHERE user_id = ${userId} AND kind = ${kind}`;
+      return row ? (row.used as number) : 0;
+    },
+    /** Counts one use and returns the new total, atomically. */
+    async bump(userId: string, kind: UsageKind): Promise<number> {
+      const [row] = await sql`
+        INSERT INTO usage_counters (user_id, kind, used) VALUES (${userId}, ${kind}, 1)
+        ON CONFLICT (user_id, kind) DO UPDATE SET used = usage_counters.used + 1, updated_at = now()
+        RETURNING used`;
+      return (row?.used as number) ?? 0;
+    },
+    async all(userId: string): Promise<Record<UsageKind, number>> {
+      const rows = await sql`SELECT kind, used FROM usage_counters WHERE user_id = ${userId}`;
+      const out: Record<UsageKind, number> = { rank: 0, chat: 0 };
+      for (const r of rows) out[r.kind as UsageKind] = r.used as number;
+      return out;
     },
   };
 }

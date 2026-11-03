@@ -7,6 +7,7 @@ import { getDb } from "@/lib/server/db";
 import { errorResponse } from "@/lib/server/errors";
 import { getQlooClient } from "@/lib/server/qloo";
 import { checkRateLimit } from "@/lib/server/rateLimit";
+import { callerKey, checkQuota, quotaExceeded, spendQuota } from "@/lib/server/quota";
 
 /** Per-user daily cap protecting the shared free-tier allowance. */
 const DAILY_CAP = { limit: 200, windowMs: 24 * 60 * 60 * 1000 };
@@ -41,7 +42,15 @@ export async function POST(req: Request): Promise<Response> {
   }
   const parsed = bodySchema.safeParse(payload);
   if (!parsed.success) return errorResponse(parsed.error);
-  const providers = providersFromEnv();
+  // A browser-supplied Groq key replaces the project's for this request only.
+  const ownKey = callerKey(req, "x-focal-groq-key");
+  const providers = ownKey
+    ? [{ name: "groq", baseUrl: "https://api.groq.com/openai/v1", apiKey: ownKey, model: process.env.GROQ_MODEL ?? "openai/gpt-oss-120b" }]
+    : providersFromEnv();
+
+  const quota = await checkQuota(session.userId, "chat", ownKey !== undefined);
+  if (!quota.allowed) return quotaExceeded("chat", quota);
+
   if (providers.length === 0) {
     return Response.json({ error: { code: "NOT_CONFIGURED", message: "no chat model configured" } }, { status: 503 });
   }
@@ -52,6 +61,8 @@ export async function POST(req: Request): Promise<Response> {
       loadProfile: () => session.store.load(),
       commit: (next, event) => session.store.commit(next, event),
     });
+    // Charged only once the model actually answered.
+    await spendQuota(session.userId, "chat", ownKey !== undefined);
     return Response.json({ reply: result.reply, events: result.events, provider: result.provider });
   } catch (e) {
     if (e instanceof ChatProviderError) {

@@ -75,3 +75,28 @@ export async function setTabOutcome(tabId: number, outcome: PageOutcome): Promis
     [key]: { pageResultId: current?.pageResultId ?? null, lifted: current?.lifted ?? 0, outcome },
   });
 }
+
+/**
+ * The user's own API keys, kept in this browser only.
+ *
+ * Never sent to focal's database and never synced to the account: they are
+ * attached to the request that needs them and used for that call alone. A
+ * visitor trying the demo spends their own quota rather than the project's.
+ */
+export interface OwnKeys {
+  /** TypeSafe (Jev), used for card identification behind a page rank. */
+  jev?: string;
+}
+
+export async function getOwnKeys(): Promise<OwnKeys> {
+  const { ownKeys } = await chrome.storage.local.get("ownKeys");
+  const raw = ownKeys && typeof ownKeys === "object" ? (ownKeys as Record<string, unknown>) : {};
+  const jev = typeof raw.jev === "string" ? raw.jev.trim() : "";
+  return jev ? { jev } : {};
+}
+
+export async function setOwnKeys(keys: OwnKeys): Promise<void> {
+  const jev = keys.jev?.trim();
+  if (jev) await chrome.storage.local.set({ ownKeys: { jev } });
+  else await chrome.storage.local.remove("ownKeys");
+}

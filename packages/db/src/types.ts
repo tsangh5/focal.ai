@@ -92,3 +92,6 @@ export class DbError extends Error {
     this.name = "DbError";
   }
 }
+
+/** What a free-tier counter meters: a ranked page, or a chat message. */
+export type UsageKind = "rank" | "chat";

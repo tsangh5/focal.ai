@@ -40,8 +40,29 @@ const SUGGESTIONS = [
 /** The API keeps the last 40 turns; older ones drop off the request, not the screen. */
 const MAX_TURNS = 40;
 
+/** The visitor's own Groq key, kept in this browser so focal never holds it. */
+export function ownGroqKey(): string {
+  try {
+    return globalThis.localStorage?.getItem("focal.groqKey")?.trim() ?? "";
+  } catch {
+    return ""; // storage can be blocked; that just means no key
+  }
+}
+
+export function setOwnGroqKey(key: string): void {
+  try {
+    const next = key.trim();
+    if (next) globalThis.localStorage?.setItem("focal.groqKey", next);
+    else globalThis.localStorage?.removeItem("focal.groqKey");
+  } catch {
+    // Nothing to do: the next request simply uses the shared key.
+  }
+}
+
 function errorCopy(status: number): string {
   switch (status) {
+    case 402:
+      return "You've used your free chat messages. Add your own Groq key below to keep going.";
     case 401:
       return "Your session ended. Sign in again to keep chatting.";
     case 429:
@@ -60,6 +81,7 @@ export function ChatPanel({ email }: { email: string }) {
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [keyDraft, setKeyDraft] = useState("");
   const endRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -77,7 +99,9 @@ export function ChatPanel({ email }: { email: string }) {
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        // The visitor's own Groq key, if they set one: this browser only, sent
+        // per request so the server never stores it.
+        headers: { "content-type": "application/json", ...(ownGroqKey() ? { "x-focal-groq-key": ownGroqKey() } : {}) },
         body: JSON.stringify({
           messages: history.slice(-MAX_TURNS).map(({ role, content: c }) => ({ role, content: c })),
         }),
@@ -195,6 +219,29 @@ export function ChatPanel({ email }: { email: string }) {
                   Sign in
                 </a>
               </>
+            ) : null}
+            {error.startsWith("You've used your free") ? (
+              <form
+                className="mt-3 flex gap-2"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  setOwnGroqKey(keyDraft);
+                  setError(keyDraft.trim() ? null : "Enter a key, or leave it blank to keep using the shared one.");
+                }}
+              >
+                <input
+                  type="password"
+                  value={keyDraft}
+                  onChange={(e) => setKeyDraft(e.target.value)}
+                  placeholder="gsk_…"
+                  aria-label="Your Groq API key"
+                  autoComplete="off"
+                  className="h-8 min-w-0 flex-1 rounded-md border border-line bg-surface px-3 text-sm text-ink placeholder:text-muted"
+                />
+                <Button type="submit" size="sm">
+                  Use my key
+                </Button>
+              </form>
             ) : null}
           </AlertDescription>
         </Alert>

@@ -1,20 +1,26 @@
 import type { BackgroundReply, ContentMessage, ExternalMessage } from "./api";
 import { FOCAL_ORIGIN, isTrustedOrigin } from "./config";
 import { applyPendingSites, enableSite, parseSettings, type Settings } from "./settings";
-import { getPendingSites, getSession, getSettings, setPendingSites, setSession, setSettings, setTabOutcome, setTabResult, type PendingSites } from "./storage";
+import { getOwnKeys, getPendingSites, getSession, getSettings, setPendingSites, setSession, setSettings, setTabOutcome, setTabResult, type PendingSites } from "./storage";
 
 /** A hung server must not pin a run (and its chip) forever. */
 const FETCH_TIMEOUT_MS = 15_000;
 /** A first rank of a new list resolves every name with Qloo, which can take well over 15 s. */
 const RANK_TIMEOUT_MS = 45_000;
 
-async function call<T>(method: "GET" | "POST" | "PUT", path: string, body?: unknown, timeoutMs = FETCH_TIMEOUT_MS): Promise<BackgroundReply<T>> {
+async function call<T>(
+  method: "GET" | "POST" | "PUT",
+  path: string,
+  body?: unknown,
+  timeoutMs = FETCH_TIMEOUT_MS,
+  extraHeaders: Record<string, string> = {},
+): Promise<BackgroundReply<T>> {
   const session = await getSession();
   if (!session) return { ok: false, error: "signed_out", status: 401 };
   try {
     const res = await fetch(`${FOCAL_ORIGIN}${path}`, {
       method,
-      headers: { "content-type": "application/json", authorization: `Bearer ${session.token}` },
+      headers: { "content-type": "application/json", authorization: `Bearer ${session.token}`, ...extraHeaders },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       // The abort rejects fetch (or the body read) into the catch below.
       signal: AbortSignal.timeout(timeoutMs),
@@ -27,7 +33,8 @@ async function call<T>(method: "GET" | "POST" | "PUT", path: string, body?: unkn
   }
 }
 
-const post = <T>(path: string, body: unknown, timeoutMs?: number) => call<T>("POST", path, body, timeoutMs);
+const post = <T>(path: string, body: unknown, timeoutMs?: number, headers?: Record<string, string>) =>
+  call<T>("POST", path, body, timeoutMs, headers);
 
 const SETTINGS_REFRESH_MS = 5 * 60 * 1000;
 /** When a pull last succeeded. A failed one leaves it, so the next run tries again. */
@@ -92,7 +99,10 @@ chrome.runtime.onMessage.addListener((msg: ContentMessage, sender, sendResponse)
   switch (msg.type) {
     case "identify":
       void refreshSettings();
-      void post("/api/page/identify", msg.body).then(sendResponse);
+      // Their key, their quota: attached per request, never stored server-side.
+      void getOwnKeys()
+        .then((keys) => post("/api/page/identify", msg.body, undefined, keys.jev ? { "x-focal-jev-key": keys.jev } : {}))
+        .then(sendResponse);
       return true;
     case "rank":
       void post("/api/page/rank", msg.body, RANK_TIMEOUT_MS).then(sendResponse);

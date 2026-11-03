@@ -5,6 +5,7 @@ import { deriveLayout } from "@/lib/server/page/layout";
 import { identifyBodySchema } from "@/lib/server/page/schemas";
 import { resolveSession, unauthorizedResponse } from "@/lib/server/page/session";
 import { checkRateLimit } from "@/lib/server/rateLimit";
+import { callerKey, checkQuota, quotaExceeded, spendQuota } from "@/lib/server/quota";
 
 /** Per-user Jev budget: one call per new layout, so this is generous. */
 const RATE_LIMIT = { limit: 30, windowMs: 60000 };
@@ -27,8 +28,16 @@ export async function POST(req: Request): Promise<Response> {
   }
   const parsed = identifyBodySchema.safeParse(payload);
   if (!parsed.success) return errorResponse(parsed.error);
+
+  // The extension may send the user's own Jev key; then nothing is metered.
+  const ownKey = callerKey(req, "x-focal-jev-key");
+  const quota = await checkQuota(session.userId, "rank", ownKey !== undefined);
+  if (!quota.allowed) return quotaExceeded("rank", quota);
+
   try {
-    const answer = await getIdentifier().identify(parsed.data);
+    const answer = await getIdentifier(ownKey).identify(parsed.data);
+    // Charged only once the upstream call actually succeeded.
+    await spendQuota(session.userId, "rank", ownKey !== undefined);
     // The extension keeps the layout and names cards locally next time; it is never stored here.
     const layout = deriveLayout(parsed.data, answer);
     return Response.json({ ...selectIdentified(answer), ...(layout ? { layout } : {}) });

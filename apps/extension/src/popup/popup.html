@@ -51,6 +51,18 @@
       </div>
       <div id="site-status" class="muted"></div>
     </div>
+    <details id="own-key-box" class="card">
+      <summary id="own-key-summary">Use your own Jev key</summary>
+      <p class="muted">
+        Stored in this browser only, never sent to focal's servers to keep. Replaces the shared key, so your ranking
+        stops counting against the free allowance.
+      </p>
+      <div class="row">
+        <input id="own-key" type="password" placeholder="apikey_…" autocomplete="off" spellcheck="false" />
+        <button id="own-key-save" class="btn outline" type="button">Save</button>
+      </div>
+      <div id="own-key-status" class="muted"></div>
+    </details>
     <div class="actions">
       <button id="why" class="btn primary" type="button" disabled>Why this order?</button>
       <a id="dashboard" class="btn outline" target="_blank" rel="noopener">Add likes in chat</a>
