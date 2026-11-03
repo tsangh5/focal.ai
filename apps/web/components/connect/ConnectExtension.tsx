@@ -77,6 +77,10 @@ export function ConnectExtension({ extensionId }: { extensionId: string }) {
 
   return (
     <div className="flex flex-col gap-3">
+      <p className="rounded-md border border-line bg-surface-2 px-3 py-2 text-sm text-muted sm:hidden">
+        On a phone? The extension runs in desktop Chrome, Edge, Brave, Arc or Opera, so connect it from your computer.
+        Your taste, activity and settings work here on any device.
+      </p>
       <button
         type="button"
         onClick={connect}

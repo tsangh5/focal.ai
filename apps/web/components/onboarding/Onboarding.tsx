@@ -9,6 +9,7 @@ import { ConnectExtension } from "@/components/connect/ConnectExtension";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { getProfile } from "@/lib/client/account";
+import { cn } from "@/lib/utils";
 
 const STEPS = ["Your taste", "Sites to skip", "Extension", "Try it"] as const;
 
@@ -52,18 +53,18 @@ export function Onboarding({ email, extensionId, accounts }: { email: string; ex
   return (
     <div className="flex flex-col gap-6">
       <nav aria-label="Onboarding steps">
-        <ol className="flex flex-wrap gap-2">
+        {/* Two by two on phones, one row from sm up. */}
+        <ol className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
           {STEPS.map((label, i) => (
             <li key={label}>
               <button
                 type="button"
                 onClick={() => setStep(i)}
                 aria-current={i === step ? "step" : undefined}
-                className={
-                  i === step
-                    ? "rounded-full bg-accent px-3 py-1 text-xs font-medium text-white"
-                    : "rounded-full border border-line px-3 py-1 text-xs text-muted hover:text-ink"
-                }
+                className={cn(
+                  "w-full rounded-full px-3 py-2 text-xs sm:w-auto sm:py-1",
+                  i === step ? "bg-accent font-medium text-white" : "border border-line text-muted hover:text-ink",
+                )}
               >
                 {i + 1}. {label}
               </button>

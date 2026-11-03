@@ -64,7 +64,7 @@ function Row({
           value={entry.strength}
           disabled={busy}
           onChange={(e) => onStrength(e.target.value as Strength)}
-          className="h-7 rounded-md border border-line bg-surface-2 px-2 text-xs text-ink"
+          className="h-8 rounded-md border border-line bg-surface-2 px-2 text-xs text-ink sm:h-7"
         >
           {STRENGTHS.map((s) => (
             <option key={s} value={s}>

@@ -102,11 +102,11 @@ export function WhyView({ view }: { view: View }) {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="w-12">#</TableHead>
+                <TableHead className="w-8 sm:w-12">#</TableHead>
                 <TableHead>Item</TableHead>
-                <TableHead className="w-16">Was</TableHead>
-                <TableHead className="w-16">Moved</TableHead>
-                <TableHead className="w-24 text-right">Affinity</TableHead>
+                <TableHead className="hidden w-16 sm:table-cell">Was</TableHead>
+                <TableHead className="hidden w-16 sm:table-cell">Moved</TableHead>
+                <TableHead className="w-16 text-right sm:w-24">Affinity</TableHead>
                 <TableHead>Outcome</TableHead>
               </TableRow>
             </TableHeader>
@@ -116,6 +116,11 @@ export function WhyView({ view }: { view: View }) {
                   <TableCell className="tabular-nums text-muted">{item.finalPosition}</TableCell>
                   <TableCell className="max-w-[320px] whitespace-normal">
                     <div className="font-medium text-ink">{item.name}</div>
+                    {/* Phones drop the Was and Moved columns; the same facts go under the name. */}
+                    <div className="flex items-center gap-1.5 text-xs text-muted sm:hidden">
+                      was #{item.originalPosition}
+                      <Movement moved={item.moved} />
+                    </div>
                     {item.entityName && item.entityName !== item.name ? (
                       <div className="text-xs text-muted">Matched to {item.entityName}</div>
                     ) : null}
@@ -140,8 +145,8 @@ export function WhyView({ view }: { view: View }) {
                       <div className="mt-1 text-xs text-muted">Folded by your rule: never {item.foldedBy.join(", ")}</div>
                     ) : null}
                   </TableCell>
-                  <TableCell className="tabular-nums text-muted">{item.originalPosition}</TableCell>
-                  <TableCell className="tabular-nums">
+                  <TableCell className="hidden tabular-nums text-muted sm:table-cell">{item.originalPosition}</TableCell>
+                  <TableCell className="hidden tabular-nums sm:table-cell">
                     <Movement moved={item.moved} />
                   </TableCell>
                   <TableCell className="text-right font-mono text-xs tabular-nums">

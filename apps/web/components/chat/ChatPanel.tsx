@@ -170,7 +170,7 @@ export function ChatPanel({ email }: { email: string }) {
                 <div
                   data-role={m.role}
                   className={cn(
-                    "whitespace-pre-wrap rounded-2xl px-3.5 py-2 text-sm leading-relaxed",
+                    "min-w-0 whitespace-pre-wrap rounded-2xl px-3.5 py-2 text-sm leading-relaxed [overflow-wrap:anywhere]",
                     m.role === "user" ? "bg-accent text-white" : "bg-surface-2 text-ink",
                   )}
                 >
@@ -247,13 +247,16 @@ export function ChatPanel({ email }: { email: string }) {
         </Alert>
       ) : null}
 
-      <PlaceholdersAndVanishInput
-        placeholders={PLACEHOLDERS}
-        onChange={(e) => setDraft(e.target.value)}
-        onSubmit={() => void send(draft)}
-        label={`Tell ${AGENT_NAME} what you like`}
-        submitLabel="Send message"
-      />
+      {/* On phones the box stays at the bottom of the screen while a long chat scrolls. */}
+      <div className="sticky bottom-0 z-10 -mx-4 bg-canvas/90 px-4 pt-2 pb-3 backdrop-blur-md sm:static sm:mx-0 sm:bg-transparent sm:p-0 sm:backdrop-blur-none">
+        <PlaceholdersAndVanishInput
+          placeholders={PLACEHOLDERS}
+          onChange={(e) => setDraft(e.target.value)}
+          onSubmit={() => void send(draft)}
+          label={`Tell ${AGENT_NAME} what you like`}
+          submitLabel="Send message"
+        />
+      </div>
     </section>
   );
 }

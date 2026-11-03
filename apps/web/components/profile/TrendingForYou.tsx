@@ -53,7 +53,7 @@ function Card({ item }: { item: DiscoverItem }) {
   const [broken, setBroken] = useState(false);
   return (
     <li className="overflow-hidden rounded-xl border border-line bg-surface">
-      <div className="relative aspect-[16/10] w-full overflow-hidden bg-surface-2">
+      <div className="relative aspect-[2/1] w-full overflow-hidden bg-surface-2 sm:aspect-[16/10]">
         {item.imageUrl && !broken ? (
           // Qloo artwork arrives in every shape — tall posters, wide venue
           // photos, square headshots — and a plain object-cover crops faces and
@@ -162,7 +162,7 @@ function TrendingPanel({ type, city }: { type: FeedType; city?: string }) {
     return (
       <div className="grid gap-3 sm:grid-cols-2">
         {[0, 1].map((i) => (
-          <Skeleton key={i} className="aspect-[16/10] w-full rounded-xl" />
+          <Skeleton key={i} className="aspect-[2/1] w-full rounded-xl sm:aspect-[16/10]" />
         ))}
       </div>
     );

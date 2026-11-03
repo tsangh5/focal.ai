@@ -48,11 +48,12 @@ export function AccountMenu({ className }: { className?: string }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
-        className={cn(buttonVariants({ variant: "outline", size: "sm" }), "max-w-[220px]", className)}
+        className={cn(buttonVariants({ variant: "outline", size: "sm" }), "max-w-[220px] max-md:size-8 max-md:justify-center max-md:px-0 max-md:has-data-[icon=inline-start]:pl-0", className)}
         aria-label="Account menu"
       >
         <UserRound data-icon="inline-start" />
-        <span className="truncate">{me.email}</span>
+        {/* Phones and small tablets show the icon alone; the email heads the menu either way. */}
+        <span className="hidden truncate md:inline">{me.email}</span>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="min-w-52">
         <DropdownMenuGroup>

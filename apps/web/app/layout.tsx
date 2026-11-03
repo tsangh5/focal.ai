@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
@@ -16,6 +16,11 @@ export const metadata: Metadata = {
   title: "focal.ai — The web, rendered for you",
   description:
     "A portable taste layer that re-ranks the web around what you actually like, powered by Qloo's cross-domain taste graph.",
+};
+
+// Mobile browsers tint their toolbar to match the page; `canvas` from globals.css.
+export const viewport: Viewport = {
+  themeColor: "#09090B",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

@@ -20,7 +20,7 @@ Ports 3000 and 4567 must be free. Each run clears `apps/web/.next/dev` first: a 
 
 | Config | Mode | Covers |
 | --- | --- | --- |
-| `playwright.dev.config.ts` | Local dev: `FOCAL_DEV_SESSION=1`, sign-in off, the `dev@localhost` account | API routes, MCP with real `fx_` sessions, the extension on fixture pages (reorder, labels, Why, feedback, infinite scroll, single-page navigation, skip rules, popup), the website pages |
+| `playwright.dev.config.ts` | Local dev: `FOCAL_DEV_SESSION=1`, sign-in off, the `dev@localhost` account | API routes, MCP with real `fx_` sessions, the extension on fixture pages (reorder, labels, Why, feedback, infinite scroll, single-page navigation, skip rules, popup), the website pages, and the website at phone width (no sideways scrolling, header, 16px fields) |
 | `playwright.auth.config.ts` | Sign-in on, with placeholder WorkOS credentials | Signed-out redirects and 401s, the sign-in failure page, OAuth metadata errors. Never reaches WorkOS |
 
 `tests/dev/zz-rate-limits.spec.ts` runs last on purpose: it uses up the dev account's request budget for a minute.

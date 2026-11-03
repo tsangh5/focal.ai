@@ -1,3 +1,4 @@
+import { ChevronDown } from "lucide-react";
 import { NEVER_RUN_GROUPS } from "@focal-ai/core";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -19,15 +20,33 @@ export function NeverRunList() {
           anywhere. This is in addition to the sites you skip above.
         </CardDescription>
       </CardHeader>
-      <CardContent className="flex flex-col gap-4">
-        {NEVER_RUN_GROUPS.map((group) => (
-          <section key={group.category} className="flex flex-col gap-1.5" data-category={group.category}>
-            <div className="flex flex-col gap-0.5">
-              <h3 className="text-sm font-medium text-ink">{group.label}</h3>
-              <p className="text-xs text-muted">{group.description}</p>
-            </div>
-            {group.sites.length > 0 ? (
-              <ul className="flex flex-wrap gap-1">
+      <CardContent className="flex flex-col">
+        {/* Collapsed per category: the full list is long, especially on a phone. */}
+        {NEVER_RUN_GROUPS.map((group) => {
+          const heading = (
+            <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+              <span className="text-sm font-medium text-ink">{group.label}</span>
+              <span className="text-xs text-muted">{group.description}</span>
+            </span>
+          );
+          if (group.sites.length === 0) {
+            return (
+              <div key={group.category} className="flex border-b border-line py-2 last:border-0" data-category={group.category}>
+                {heading}
+              </div>
+            );
+          }
+          return (
+            <details key={group.category} className="group border-b border-line last:border-0" data-category={group.category}>
+              <summary className="flex min-h-11 cursor-pointer list-none items-center gap-3 py-2 [&::-webkit-details-marker]:hidden">
+                {heading}
+                <span className="shrink-0 text-xs text-muted">
+                  {group.sites.length}
+                  {group.pattern ? "+" : ""} sites
+                </span>
+                <ChevronDown className="size-4 shrink-0 text-muted transition-transform group-open:rotate-180" aria-hidden />
+              </summary>
+              <ul className="flex flex-wrap gap-1 pb-3">
                 {group.sites.map((host) => (
                   <li key={host} className="rounded border border-line px-1.5 py-0.5 text-[11px] text-muted">
                     {host}
@@ -39,9 +58,9 @@ export function NeverRunList() {
                   </li>
                 ) : null}
               </ul>
-            ) : null}
-          </section>
-        ))}
+            </details>
+          );
+        })}
       </CardContent>
     </Card>
   );
