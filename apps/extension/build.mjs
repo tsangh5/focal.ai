@@ -38,6 +38,14 @@ await build({ ...common, entryPoints: [join(root, "src/content.ts")], outfile: j
 await build({ ...common, entryPoints: [join(root, "src/popup/popup.ts")], outfile: join(out, "popup/popup.js"), format: "esm" });
 copyFileSync(join(root, "src/popup/popup.html"), join(out, "popup/popup.html"));
 
+// Icons: required by the Chrome Web Store, and what the toolbar shows.
+mkdirSync(join(out, "icons"), { recursive: true });
+const ICON_SIZES = [16, 32, 48, 128];
+for (const size of ICON_SIZES) {
+  copyFileSync(join(root, `src/icons/icon-${size}.png`), join(out, `icons/icon-${size}.png`));
+}
+const icons = Object.fromEntries(ICON_SIZES.map((s) => [s, `icons/icon-${s}.png`]));
+
 /**
  * Pins the extension id to `aekphmehgdiggfigdljomnmhgkjlanpj`.
  *
@@ -64,7 +72,8 @@ const manifest = {
   host_permissions: ["<all_urls>"],
   background: { service_worker: "background.js", type: "module" },
   content_scripts: [{ matches: ["http://*/*", "https://*/*"], js: ["content.js"], run_at: "document_idle" }],
-  action: { default_title: "focal", default_popup: "popup/popup.html" },
+  icons,
+  action: { default_title: "focal", default_popup: "popup/popup.html", default_icon: icons },
   // The build origin plus the deployed sites. A local build would otherwise
   // trust only localhost, so /connect on the real site could never hand the
   // extension a session. background.ts still checks sender.origin per message.

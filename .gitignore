@@ -22,3 +22,6 @@ coverage/
 scripts/probe-output/
 *.tsbuildinfo
 .neon
+
+# Chrome Web Store artifact, rebuilt on demand
+apps/extension/focal-extension-*.zip
